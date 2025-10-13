@@ -83,7 +83,12 @@ namespace kg{
 			}
         }
 
-        void end(){closeWindow=true;}
+        void end(){
+            SDL_DestroyWindow(window);
+            SDL_DestroyRenderer(gRenderer);
+            SDL_Quit();
+            closeWindow=true;
+        }
 
         inline void provideDisplayLoop(void (*func)(void)){
             loopFunc = func;

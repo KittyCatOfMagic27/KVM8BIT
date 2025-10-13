@@ -17,11 +17,11 @@ struct PalettePointer{
     void init(PaletteType _type){
         type = _type;
         switch(type){
-            case PaletteType::PT_B2: palette = new(PaletteB2*); 
+            case PaletteType::PT_B2: palette = new PaletteB2; 
             break;
-            case PaletteType::PT_B4: palette = new(PaletteB4*); 
+            case PaletteType::PT_B4: palette = new PaletteB4; 
             break;
-            case PaletteType::PT_B8: palette = new(PaletteB8*); 
+            case PaletteType::PT_B8: palette = new PaletteB8; 
             break;
             default:
             break;
@@ -36,7 +36,7 @@ struct PalettePointer{
             case PaletteType::PT_B8: return (*(PaletteB8*)palette)[i]; 
             break;
             default:
-            std::cerr << "PALette WITH NO TYPE BEING READ" << std::endl;
+            std::cerr << "PALETTE WITH NO TYPE BEING READ" << std::endl;
             exit(-1);
             break;
         }
@@ -127,6 +127,10 @@ class K_PPU{
         window.rect(realPos(x, y+1), scale, scale, color);
     } 
     void drawTexture(uint8_t x, uint8_t y, uint8_t tex, uint8_t palette){
+        if(tex>textures.size()-1){ 
+            std::cerr << "INVALID TEXTURE ID: " << (int)tex << std::endl;
+            return;
+        }
         textures[tex].update(palette, palettes);
         Vector2<int> pos = realPos(x, y);
         SDL_Rect dest_rect = {pos.x, pos.y, (int)(textures[tex].w)*scale*textures[tex].size, (int)(textures[tex].h)*scale*textures[tex].size};

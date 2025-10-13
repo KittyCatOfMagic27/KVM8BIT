@@ -4,6 +4,10 @@ const short outAddr = 0xFFFF; # replaces this symbol in the program with the num
 heap uint x = 0; # in the RAM at a given address #
 heap uint y = 0; 
 
+static buffer texture = [ #a block of preset ROM memory#
+    1 2 3 4 5
+];
+
 proc:void finishingProc()
     sys(0x0A, finalMessage);
     exit(0); #cannot return since it'd be a RTS instead of BRK#

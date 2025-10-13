@@ -5,9 +5,12 @@ The project has 3 stages: .K, KASM, and the emulator itself!.
 You can see where these are in 'run.sh'.
 
 ## How to Run ##
-`usr@penguin:~/.../KVM_8BIT$ bash run.sh`
-This runs ALL stages from .K to emulator, building the .K compiler as well. Change it... seriously please, this is for debug.
-The .K code is read from 'main.k.'
+`usr@penguin:~/.../KVM_8BIT$ source ./run.sh`
+`usr@penguin:~/.../KVM_8BIT$ runk -fc`
+or try
+`usr@penguin:~/.../KVM_8BIT$ runk -fc ./ExamplesK/gamedev/player_moving.k`
+This runs ALL stages from .K to emulator, building the .K compiler as well.
+The .K code is read from 'main.k.' unless otherwise stated!
 
 ## Stages ##
 The project has 3 stages: .K, KASM, and the emulator itself!.
@@ -28,4 +31,4 @@ BRK;
 Some tips! ALWAYS put the \_\_MAIN\_\_ label at the end of a program, as the compiler is only a single pass (nothing can be used before it is defined).
 
 ## .K Syntax ##
-.K is very much similar to a much more explicit C99 with limited functionality. .K is nowhere near finalized yet, so the desired syntax is currently outlined in 'ExamplesK/syntax.k'.
+.K is very much similar to a much more explicit C99 with limited functionality. .K is nowhere near finalized yet, so most implemented functions are displayed in 'main.k' is currently outlined in 'ExamplesK/syntax.k'.

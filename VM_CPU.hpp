@@ -133,6 +133,9 @@ class K_CPU{
                         break;
                         //GRAPHICS FUNCTION
                         case 0x08:{
+                            // for(int i = 0; i < RAM.OUT_BUFFER.size(); i++){
+                            //     std::cout << (int)RAM.OUT_BUFFER[i] << " ";
+                            // }
                             switch(RAM.OUT_BUFFER[0]){
                                 //CHANGE BACKGROUND COLOR
                                 case 0x01:{

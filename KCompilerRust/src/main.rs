@@ -12,6 +12,7 @@ pub mod compiler;
 use crate::lexer::LexerError;
 use std::fs::*;
 use std::io::Read;
+use std::env;
 
 fn loadFile<'a>(file_name: &'a str)->Result<String, LexerError>{
     let mut file_bundle = File::open(file_name)?;
@@ -23,8 +24,16 @@ fn loadFile<'a>(file_name: &'a str)->Result<String, LexerError>{
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let file_name = "../main.k";
+    let mut file_name = "../main.k";
     let out_file_name = "../program.kasm";
+
+    // if file provided, use it
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 1 {
+        println!("{args:?}");
+        file_name = &args[1];
+    }
+
     // let file_name = "../ExamplesK/syntax.k";
     let file_contents: String = match loadFile(file_name) {
         Ok(file_data) => file_data,

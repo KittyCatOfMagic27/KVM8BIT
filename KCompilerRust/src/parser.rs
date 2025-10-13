@@ -220,7 +220,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                             vtk = $tk_iter.peek().unwrap();
                         }
                         else {
-                            return Err(ParserError::MissingClosingSqBracket);
+                            if $dat != DataAllocationType::Static {return Err(ParserError::MissingClosingSqBracket);}
                         }
                     }
                     

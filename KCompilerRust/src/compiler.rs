@@ -181,6 +181,15 @@ fn moveOutTo(
                     expressionString.push_str(&(0x0100+(s_addr as u16)).to_string());
                     expressionString.push_str(";\n");
                 }
+                ExpressionOutLocation::Heap(addr_origin) =>{
+                    expressionString.push_str(
+                        &moveOutTo(start_loc.clone(), ExpressionOutLocation::RegisterY)?
+                    );
+
+                    expressionString.push_str(
+                        &moveOutTo(ExpressionOutLocation::RegisterY, dest.clone())?
+                    );
+                }
                 ExpressionOutLocation::RegisterY => {
                     expressionString.push_str("STY ");
                     expressionString.push_str(&addr.to_string());
@@ -709,6 +718,35 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
                     }
                     TokenType::StringLiteral => {
                         ExpressionOutLocation::StringLiteral(expr.tks[2].tk_data.to_string())
+                    }
+                    TokenType::Symbol => {
+                        if expr.tks[2].tk_data == "[" {
+                            //array literal
+                            let var = grabVariableCompNP!(
+                                expr.tks[0].tk_comp_data.var().ok_or(
+                                    CompilerError::UnidentifiedError
+                                )?, 
+                                program
+                            )?;
+                            
+                            if var.t.a == DataAllocationType::Static && var.t.v == DataValueType::Buffer {
+                                label_header.push_str("LABEL ");
+                                label_header.push_str(expr.tks[0].tk_data);
+                                label_header.push_str("\nRAW\n");
+                                let mut i = 3;
+                                while i < expr.tks.len() && expr.tks[i].tk_data != "]" {
+                                    label_header.push_str(expr.tks[i].tk_data);
+                                    label_header.push(' ');
+                                    i+=1;
+                                }
+                                label_header.push_str("\nEND\n");
+                            } else {
+                                return Err(CompilerError::InvalidStandAloneToken(expr.tks[2].tk_type, expr.tks[2].tk_data.to_string()));
+                            }
+                            continue;
+                        } else {
+                            return Err(CompilerError::InvalidStandAloneToken(expr.tks[2].tk_type, expr.tks[2].tk_data.to_string()));
+                        }
                     }
                     _ => return Err(CompilerError::InvalidStandAloneToken(expr.tks[2].tk_type, expr.tks[2].tk_data.to_string())),
                 };
