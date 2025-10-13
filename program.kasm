@@ -1,0 +1,47 @@
+__START_HEADER__
+LDYC 0;
+STY 512;
+LDYC 0;
+STY 513;
+__END_HEADER__
+LABEL finalMessage
+RAW
+"Goodbye World!" 10 0
+END
+LABEL hello
+RAW
+"Hello World!" 10 0
+END
+LABEL finishingProc
+STRC 65534 finalMessage;
+SYS 0x0A;
+LDAC 0;
+BRK;
+LABEL printPos
+SAL 4;
+LDA 512;
+ADCC 48;
+STA 65535;
+LDA 513;
+ADCC 48;
+STA 65535;
+LDYC 'h';
+STYS 0;
+LDYC 'i';
+STYS 1;
+LDYC 10;
+STYS 2;
+LDYC 0;
+STYS 3;
+STRC 65534 256;
+SYS 0x0C;
+DAL 4;
+RTS;
+LABEL __MAIN__
+STRC 65534 finishingProc;
+SYS 0x09;
+STRC 65534 hello;
+SYS 0x0A;
+JSR printPos;
+LDAC 0;
+BRK;

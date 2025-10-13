@@ -1,0 +1,209 @@
+LABEL goodByeString
+    RAW
+    "Goodbye!" 10 0
+    END
+
+LABEL palletTest
+    RAW
+    4
+    255 0 0
+    0 255 0
+    0 0 255
+    255 255 255
+    END
+
+LABEL texture01
+    RAW
+    4 4
+    4 1
+    75 75 75 75
+    END
+
+LABEL __END__
+    STRC 0xFFFE goodByeString;
+    SYS 0x0A;
+    LDAC 1;
+    BRK;
+
+LABEL DRAW_CHECKERS
+    LDAC 0;
+    STA 0x0206;
+    LDAC 1;
+    STA 0x0207;
+    LDXC 0;
+    LABEL DRAW_CHECKERS_WHILE0
+        LDAC 0;
+        CMP 0x0207;
+        BEQ 3;
+        JMPA DRAW_CHECKERS_WHILE1_ESC2;
+            LDAC 1;
+            STA 0x0206;
+            JMPA DRAW_CHECKERS_WHILE1_ESC3;
+        LABEL DRAW_CHECKERS_WHILE1_ESC2
+            LDAC 0;
+            STA 0x0206;
+        LABEL DRAW_CHECKERS_WHILE1_ESC3
+        STA 0x0207;
+
+        LDYC 0;
+        LABEL DRAW_CHECKERS_WHILE1
+            LDAC 0x02;
+            STA 0xFFFE;
+            STX 0xFFFE;
+            STY 0xFFFE;
+
+            LDAC 0;
+            CMP 0x0206;
+            BEQ 3;
+            JMPA DRAW_CHECKERS_WHILE1_ESC0;
+                LDAC 1;
+                STA 0x0206;
+                LDAC 0;
+                JMPA DRAW_CHECKERS_WHILE1_ESC1;
+            LABEL DRAW_CHECKERS_WHILE1_ESC0
+                LDAC 0;
+                STA 0x0206;
+                LDAC 128;
+            LABEL DRAW_CHECKERS_WHILE1_ESC1
+            STA 0xFFFE;
+            STA 0xFFFE;
+            STA 0xFFFE;
+            SYS 0x08;
+            
+            INY;
+            CPYC 30;
+            BEQ 3;
+            JMPA DRAW_CHECKERS_WHILE1;
+        INX;
+        CPXC 32;
+        BEQ 3;
+    JMPA DRAW_CHECKERS_WHILE0;
+    RTS;
+
+LABEL DRAW_TEST_TEXTURE
+    LDAC 0x05;
+    STA 0xFFFE;
+    LDA 0x0201;
+    STA 0xFFFE; #choose x#
+    LDA 0x0202;
+    STA 0xFFFE; #choose y#
+    LDAC 0;
+    STA 0xFFFE; #choose texture#
+    STA 0xFFFE; #choose pallet#
+    SYS 0x08;
+    RTS;
+
+LABEL LOAD_TEST_TEXTURE
+    LDAC 0x04;
+    STA 0xFFFE;
+    STRC 0xFFFE texture01;
+    SYS 0x08;
+    RTS;
+
+LABEL LOAD_TEST_PALLET
+    LDAC 0x06;
+    STA 0xFFFE;
+    STRC 0xFFFE palletTest;
+    SYS 0x08;
+    RTS;
+
+LABEL UPDATE_POS
+    LDAC 'w';
+    STA 0xFFFE;
+    SYS 0x0B;
+    CMPC 1;
+    BEQ 3;
+    JMPA UPDATE_POS_ESC0;
+        INC 0x0202;
+    LABEL UPDATE_POS_ESC0
+
+    LDAC 's';
+    STA 0xFFFE;
+    SYS 0x0B;
+    CMPC 1;
+    BEQ 3;
+    JMPA UPDATE_POS_ESC1;
+        DEC 0x0202;
+    LABEL UPDATE_POS_ESC1
+
+    LDAC 'a';
+    STA 0xFFFE;
+    SYS 0x0B;
+    CMPC 1;
+    BEQ 3;
+    JMPA UPDATE_POS_ESC2;
+        DEC 0x0201;
+    LABEL UPDATE_POS_ESC2
+
+    LDAC 'd';
+    STA 0xFFFE;
+    SYS 0x0B;
+    CMPC 1;
+    BEQ 3;
+    JMPA UPDATE_POS_ESC3;
+        INC 0x0201;
+    LABEL UPDATE_POS_ESC3
+
+    RTS;
+
+LABEL __MAIN__
+    #declare closing proc#
+    STRC 0xFFFE __END__;
+    SYS 0x09;
+
+    JSR LOAD_TEST_PALLET;
+    JSR LOAD_TEST_TEXTURE;
+
+    #declare pos#
+    LDAC 0;
+    STA 0x0201;
+    STA 0x0202;
+
+    #set iterator#
+    LDYC 0;
+    STY 0x0205;
+    LABEL __MAIN__WHILE0
+        
+        #Graphics Call to Change Window Color#
+        LDAC 0x01;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        STA 0xFFFE;
+        STA 0xFFFE;
+        SYS 0x08;
+
+        #load events#
+        SYS 0x0B;
+
+        #update position#
+        JSR UPDATE_POS;
+
+        #Draw all objects#
+        JSR DRAW_CHECKERS;
+        JSR DRAW_TEST_TEXTURE;
+
+        #Update Window#
+        SYS 0x07;
+
+        #wait 13ms (aim 60fps)#
+        LDAC 13;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        SYS 0x02;
+        
+        #loop#
+        LDY 0x0205;
+        INY;
+        STY 0x0205;
+        #CPYC 255;
+        BEQ 3;#
+        JMPA __MAIN__WHILE0;
+    
+    LDAC 0;
+    BRK;

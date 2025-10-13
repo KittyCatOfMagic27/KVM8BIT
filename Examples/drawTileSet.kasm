@@ -1,0 +1,111 @@
+LABEL goodByeString
+    RAW
+    "Goodbye!" 10 0
+    END
+
+LABEL __END__
+    STRC 0xFFFE goodByeString;
+    SYS 0x0A;
+    LDAC 1;
+    BRK;
+
+LABEL DRAW_CHECKERS
+    LDAC 0;
+    STA 0x0206;
+    LDAC 1;
+    STA 0x0207;
+    LDXC 0;
+    LABEL DRAW_CHECKERS_WHILE0
+        LDAC 0;
+        CMP 0x0207;
+        BEQ 3;
+        JMPA DRAW_CHECKERS_WHILE1_ESC2;
+            LDAC 1;
+            STA 0x0206;
+            JMPA DRAW_CHECKERS_WHILE1_ESC3;
+        LABEL DRAW_CHECKERS_WHILE1_ESC2
+            LDAC 0;
+            STA 0x0206;
+        LABEL DRAW_CHECKERS_WHILE1_ESC3
+        STA 0x0207;
+
+        LDYC 0;
+        LABEL DRAW_CHECKERS_WHILE1
+            LDAC 0x02;
+            STA 0xFFFE;
+            STX 0xFFFE;
+            STY 0xFFFE;
+
+            LDAC 0;
+            CMP 0x0206;
+            BEQ 3;
+            JMPA DRAW_CHECKERS_WHILE1_ESC0;
+                LDAC 1;
+                STA 0x0206;
+                LDAC 0;
+                JMPA DRAW_CHECKERS_WHILE1_ESC1;
+            LABEL DRAW_CHECKERS_WHILE1_ESC0
+                LDAC 0;
+                STA 0x0206;
+                LDAC 255;
+            LABEL DRAW_CHECKERS_WHILE1_ESC1
+            STA 0xFFFE;
+            STA 0xFFFE;
+            STA 0xFFFE;
+            SYS 0x08;
+            
+            INY;
+            CPYC 30;
+            BEQ 3;
+            JMPA DRAW_CHECKERS_WHILE1;
+        INX;
+        CPXC 32;
+        BEQ 3;
+    JMPA DRAW_CHECKERS_WHILE0;
+    RTS;
+
+LABEL __MAIN__
+    #declare closing proc#
+    STRC 0xFFFE __END__;
+    SYS 0x09;
+
+    #set iterator#
+    LDYC 0;
+    STY 0x0205;
+    LABEL __MAIN__WHILE0
+        
+        #Graphics Call to Change Window Color#
+        LDAC 0x01;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        STA 0xFFFE;
+        STA 0xFFFE;
+        SYS 0x08;
+
+        JSR DRAW_CHECKERS;
+
+        #Update Window#
+        SYS 0x07;
+
+        #wait 33ms#
+        LDAC 33;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        SYS 0x02;
+        
+        #loop#
+        LDY 0x0205;
+        INY;
+        STY 0x0205;
+        #CPYC 255;
+        BEQ 3;#
+        JMPA __MAIN__WHILE0;
+    
+    LDAC 0;
+    BRK;

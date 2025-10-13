@@ -1,0 +1,124 @@
+SYSTEM
+-------------------------
+SPT - 82 $$ - Switch Default Page to($$)
+SYS - E2 $$ - Make System Call, All input data in IO buffer
+SAL - 1A ## - Allocate ## bytes on the stack
+DAL - 3A ## - Deallocate ## bytes on the stack
+
+
+TRANSFER
+-------------------------
+TAX - AA - A -> X
+TXA - 8A - X -> A
+TAY - A8 - A -> Y
+TYA - 98 - Y -> A
+TSX - BA - S -> X
+TXS - 9A - X -> S
+
+
+LOAD
+-------------------------
+LDY - B4 $$ - Load at($$) to Y on page
+LDYC - A0 ## - Load ## into Y
+LDY - AC $$ @@ - Load at($$) to Y on page(@@)
+LDYS - 5C $$ - Load at($$) on stack into Y
+
+LDA - A1 $$ - Load at($$) to A on page
+LDAC - A9 ## - Load ## into A
+LDA - AD $$ @@ - Load at($$) to A on page(@@)
+LDAS - 7C $$ - Load at($$) on stack into A
+
+LDX - A2 $$ - Load at($$) to X on page
+LDXC - A6 ## - Load ## into X
+LDX - AE $$ @@ - Load at($$) to X on page(@@)
+LDXS - DC $$ - Load at($$) to stack into X
+
+
+STORE
+-------------------------
+STRC - 89 $$$$ @@@@ - Stores @@@@ at M[$$$$]
+STCS - C2 $$ @@@@ - Stores @@@@ at stack($$) //might not work
+STSH - 04 - @@@@ $$ - Stores addr(stack($$)) at M[$$$$] //not in emulator
+
+STY - 80 $$ - Store Y to($$) on page
+STY - 8C $$ @@ - Store Y to(@@) on page($$)
+STYS - FC $$ - Store Y to stack($$)
+
+STA - 81 $$ - Store A to($$) on page
+STA - 8D $$ @@ - Store A to(@@) on page($$)
+STAS - 1C $$ - Stores A to stack($$)
+
+STX - 82 $$ - Store X to($$) on page
+STX - 8E $$ @@ - Store X to(@@) on page($$)
+STXS - 3C $$ - Store X to stack($$)
+
+
+ARITHMETIC 
+-------------------------
+ADCC - 69 ## - A + CarryOverFlag + ## -> A & CarryOverFlag  
+ADC - 65 $$ - A + CarryOverFlag + M(addr($$)) -> A & CarryOverFlag
+ADC - 6D $$ @@ - A + CarryOverFlag + M(page($$),addr(@@)) -> A & CarryOverFlag
+
+SBCC - E9 ## - A - ## - (1-CarryOverFlag) -> A  
+SBC - E5 $$ - A - M(addr($$)) - (1-CarryOverFlag) -> A
+SBC - ED $$ @@ - A - M(page($$), addr($$)) - (1-CarryOverFlag) -> A
+
+
+DEC/INC
+-------------------------
+DEC - CE $$ @@ - M(page($$), addr(@@)) Decrement
+DEX - CA - Decrement X
+DEY - 88 - Decrement Y
+
+INC - EE $$ @@ - M(page($$), addr(@@)) Increment
+INX - E8 - Increment X
+INY - C8 - Increment Y
+
+
+LOGIC GATES
+-------------------------
+ANDC - 29 ## - A & ## -> A
+AND - 25 $$ - A & M(addr($$)) -> A
+AND - 2D $$ @@ - A & M(page($$), addr(@@)) -> A
+
+XORC (EOR) - 49 ## - A xor ## -> A
+XOR (EOR) - 45 $$ - A xor M(addr($$)) -> A
+XOR (EOR) - 4D $$ @@ - A xor M(page($$), addr(@@)) -> A
+
+ORAC - 09 ## - A or ## -> A
+ORA - 05 $$ - A or M(addr($$)) -> A
+ORA - 0D $$ @@ - A or M(page($$), addr(@@)) -> A
+
+
+COMPARE
+-------------------------
+CMPC - C9 ## - compare ## and A
+CMP - C5 $$ - compare M(addr($$)) and A
+CMP - CD $$ @@ - compare M(page($$), addr(@@)) and A
+
+CPXC - E0 ## - compare ## and X
+CPX - E4 $$ - compare M(addr($$)) and X
+CPX - EC $$ @@ - compare M(page($$), addr(@@)) and X
+
+CPYC - C0 ## - compare ## and Y
+CPY - C4 $$ - compare M(addr($$)) and Y
+CPY - CC $$ @@ - compare M(page($$), addr(@@)) and Y
+
+
+JUMP AND FLAG
+-------------------------
+JMPA - 4C $$ @@ - Jump to Absolute Address page($$), addr(@@) 
+JMPR - 6C $$ @@ - Jump to Relative Address page($$), addr(@@)
+
+JSR - 20 $$ @@ - Jump to Subroutine page($$), addr(@@)
+RTS - 60 - Return from Subroutine
+
+BPL - 10 $$ - Branch $$ bytes on NF = 0 //NF negative flag
+BMI - 30 $$ - Branch $$ bytes on NF = 1
+BVC - 50 $$ - Branch $$ bytes on VF = 0
+BVS - 70 $$ - Branch $$ bytes on VF = 1
+BCC - 90 $$ - Branch $$ bytes on CF = 0 //CF Carry Over Flag
+BCS - B0 $$ - Branch $$ bytes on CF = 1
+BNE - D0 $$ - Branch $$ bytes on ZF = 0 //ZF Zero Flag
+BEQ - F0 $$ - Branch $$ bytes on ZF = 1
+

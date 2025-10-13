@@ -1,0 +1,15 @@
+TEXTURE LAYOUT
+-------------------------
+RAW
+    data width, data height 
+    format size (1 or 2 or 4) [px per data], format color type (RGB = 0 [no impl.], PALLET-2b = 1, PALLET-4b = 2, PALLET-8b = 3)
+    DATA
+END
+
+
+PALLET LAYOUT
+-------------------------
+RAW
+    pallet size (4[2 bit], 16[4 bit], 255[8 bit]) 
+    RGB DATA
+END 

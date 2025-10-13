@@ -1,0 +1,193 @@
+LABEL UPDATE_POSX
+    #if X vel neg, -1: otherwise +1#
+    LDA 0x0201;
+    LDX 0x0203;
+    CPXC 255;
+    BEQ 5;
+        ADCC 1; 
+    JMPA UPDATE_POSX_ESC0;
+        SBCC 1;
+    LABEL UPDATE_POSX_ESC0
+
+    #check if negative and then correct#
+    BMI 3;
+    JMPA UPDATE_POSX_ESC1;
+        LDAC 1;
+        STA 0x0203;
+        STA 0x0201;
+        JMPA UPDATE_POSX_ESC2;
+    LABEL UPDATE_POSX_ESC1
+
+    #check if limit and then correct#
+    CMPC 17;
+    BEQ 3;
+    JMPA UPDATE_POSX_ESC2;
+        LDAC 255;
+        STA 0x0203;
+        LDAC 17;
+        STA 0x0201;
+    LABEL UPDATE_POSX_ESC2
+    STA 0x0201;
+    RTS;
+
+
+LABEL UPDATE_POSY
+    #if Y vel neg, -1: otherwise +1#
+    LDA 0x0202;
+    LDX 0x0204;
+    CPXC 255;
+    BEQ 5;
+        ADCC 1; 
+    JMPA UPDATE_POSY_ESC0;
+        SBCC 1;
+    LABEL UPDATE_POSY_ESC0
+
+    #check if negative and then correct#
+    BMI 3;
+    JMPA UPDATE_POSY_ESC1;
+        LDAC 1;
+        STA 0x0204;
+        STA 0x0202;
+        JMPA UPDATE_POSY_ESC2;
+    LABEL UPDATE_POSY_ESC1
+
+    #check if limit and then correct#
+    CMPC 7;
+    BEQ 3;
+    JMPA UPDATE_POSY_ESC2;
+        LDAC 255;
+        STA 0x0204;
+        LDAC 7;
+        STA 0x0202;
+    LABEL UPDATE_POSY_ESC2
+    STA 0x0202;
+    RTS;
+
+LABEL CLEAR_SCREEN
+    LDAC 0x1B;
+    STA 0xFFFE;
+    LDAC '[';
+    STA 0xFFFE;
+    LDAC '2';
+    STA 0xFFFE;
+    LDAC 'J';
+    STA 0xFFFE;
+    LDAC 0x1B;
+    STA 0xFFFE;
+    LDAC '[';
+    STA 0xFFFE;
+    LDAC '3';
+    STA 0xFFFE;
+    LDAC 'J';
+    STA 0xFFFE;
+    LDAC 0x1B;
+    STA 0xFFFE;
+    LDAC '[';
+    STA 0xFFFE;
+    LDAC 'H';
+    STA 0xFFFE;
+    SYS 0x01;
+    RTS;
+
+LABEL PRINT_LINE 
+    LDXC 0;
+    LDAC '-'; 
+    LABEL PRINT_LINE_WHILE0
+        STA 0xFFFF;
+        INX;
+        CPXC 20;
+        BEQ 3;
+        JMPA PRINT_LINE_WHILE0;
+    LDAC 10; 
+    STA 0xFFFF;
+    RTS;
+
+LABEL PRINT_BOX_INSIDE
+    LDXC 0;
+    LABEL PRINT_BOX_INSIDE_WHILE0
+        LDAC '|'; 
+        STA 0xFFFF;
+        LDYC 0;
+        LABEL PRINT_BOX_INSIDE_WHILE1
+        #choose ball or space#
+            CPX 0x0202;
+            BEQ 3;
+            JMPA PRINT_BOX_INSIDE_WHILE1_ESC0;
+            CPY 0x0201;
+            BEQ 3;
+            JMPA PRINT_BOX_INSIDE_WHILE1_ESC0;
+                LDAC 48; 
+                STA 0xFFFF;
+            JMPA PRINT_BOX_INSIDE_WHILE1_ESC1;
+            LABEL PRINT_BOX_INSIDE_WHILE1_ESC0
+                LDAC 32; 
+                STA 0xFFFF;
+            LABEL PRINT_BOX_INSIDE_WHILE1_ESC1
+            INY;
+            CPYC 18;
+            BEQ 3;
+            JMPA PRINT_BOX_INSIDE_WHILE1;
+        LDAC '|'; 
+        STA 0xFFFF;
+        LDAC 10; 
+        STA 0xFFFF;
+        INX;
+        CPXC 8;
+        BEQ 3;
+    JMPA PRINT_BOX_INSIDE_WHILE0;
+    RTS;
+
+LABEL __MAIN__
+    #x and y values#
+    LDAC 0;
+    STA 0x0201;
+    STA 0x0202;
+    #x and y velocities#
+    LDAC 255;
+    STA 0x0203;
+    STA 0x0204;
+
+    LDYC 0;
+    STY 0x0205;
+    LABEL __MAIN__WHILE0
+        #clear screen#
+        JSR CLEAR_SCREEN;
+
+        #print program#
+        JSR PRINT_LINE;
+        JSR PRINT_BOX_INSIDE;
+        JSR PRINT_LINE;
+
+        #update pos and print pos#
+        JSR UPDATE_POSX;
+        JSR UPDATE_POSY;
+        LDA 0x0201;
+        ADCC 48;
+        STA 0xFFFF;
+        LDA 0x0202;
+        ADCC 48;
+        STA 0xFFFF;
+        LDAC 10;
+        STA 0xFFFF;
+
+        #wait 50ms#
+        LDAC 50;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        LDAC 0;
+        STA 0xFFFE;
+        SYS 0x02;
+
+        #loop#
+        LDY 0x0205;
+        INY;
+        STY 0x0205;
+        CPYC 100;
+        BEQ 3;
+        JMPA __MAIN__WHILE0;
+    
+    LDAC 0;
+    BRK;

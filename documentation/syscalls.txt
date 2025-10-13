@@ -1,0 +1,35 @@
+ALL REQUESTED DATA IS STORED IN THE IO BUFFER (address 0xFFFE)
+
+GRAPHICS CALLS
+-------------------------
+UPDATE WINDOW - 0x07 - Ticks/updates the window & loads events
+GRAPHICS FUNCTION - 0x08 - Deals with various graphics functions, store the function code and then arguments in order
+    BACKGROUND COLOR - 0x01 ## ## ## - Changes background color to the given rgb value
+    COLORED TILE - 0x02 XX YY RR GG BB - Colors tile at (x, y) to (r, g, b)
+    COLORED PIXEL - 0x03 XX YY RR GG BB - Colors pixel at (x, y) to (r, g, b)
+    LOAD TEXTURE (ROM) - 0x04 $$$$ - Loads the texture at ROM($$$$) and puts the ID in A reg 
+    DRAW TEXTURE (LOADED) - 0x05 XX YY II PP - Draws texture II at (x, y) with pallet PP 
+    LOAD PALLET (ROM) - 0x06 $$$$ - Loads the pallet at ROM($$$$) and puts the ID in A reg
+
+
+IO/FS CALLS
+-------------------------
+WRITE (ROM) - 0x0A - Writes the bytes at the given ROM address until 0 is hit (0x$$@@)
+WRITE (RAM) - 0x0C - Writes the bytes at the given RAM address until 0 is hit (0x$$@@)
+DUMP - 0x01 - Dumps the OUT buffer to the console and clears it
+
+READ - 0x03 - Reads the IN buffer to given address and amount (0x$$@@ 0x##) 
+CLEAR IN - 0x04 - Clears the IN buffer 
+ACTIVATE POLLING - 0x05 - Activates polling for controls
+DEACTIVATE POLLING - 0x06 - Deactivates polling for controls
+
+
+CLOCK 
+-------------------------
+SLEEP - 0x02 - Sleeps for the given amount of miliseconds (expects 4-byte int)
+
+
+MISC. 
+-------------------------
+SETUP END PROC - 0x09 - When the program is closed the given procedure is ran.
+IS KEY PRESSED - 0x0B ## - When the key ## is pressed A = 1 else A = 0.  
