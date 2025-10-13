@@ -1,0 +1,45 @@
+NEEDS:
+BYTECODE/OPCODE TABLE
+ROM (to read program from)
+
+
+MOS 6502
+    REGISTERS:
+        A - 8bit (arithmetic)
+        X - 8bit (inc)
+        Y - 8bit (inc)
+
+        P - 8bits (processor status|flag)
+            bit7 - NF - Negative Flag: 1 when result is negative
+            bit6 - VF - Overflow Flag: 1 on signed overflow
+            bit5 - Unused: always set to 1
+            bit4 - BF - Break Flag: 1 when pushed by instructions (BRK / PHP) and 0 when pushed by interrupts (NMI / IRQ)
+            bit3 - DF - Decimal Mode Flag: 1 when CPU is in Decimal Mode
+            bit2 - IF - Interrupt Disable Flag: when 1, no interrupt will occur (except BRK and NMI)
+            bit1 - ZF - Zero Flag: 1 when all bits of a result are 0
+            bit0 - CF - Carry Flag: 1 on unsigned overflow 
+        
+        S - 8bit (stack pointer)
+        PC - 16bit (program counter [ROM])
+
+    The 6502 also has internal latches and buffers used for address handling and instruction execution. For example:
+
+        ABL/ABH: Address Bus Low/High, latches for the address bus.
+        AI/BI: Input Registers for the ALU.
+        IR: Instruction Register, holds the fetched instruction opcode byte while the CPU decodes and executes it.
+
+    little-endian
+    64KB of memory space
+
+RAM:
+    2 KB of Static RAM (SRAM) Nintendo calls this area ‘Work RAM’ (WRAM) and can be used to store:
+
+    Variables for handling the game state and/or to look up information.
+    The ‘stack’, which temporarily saves register values while the CPU is executing subroutines.
+    A ‘buffer area’ so the CPU can copy large data between two locations.
+
+Open Bus:
+    Inherited from MOS’ design, this console also features a special ‘anomaly’ called Open Bus: 
+    If an instruction tries to read from an unmapped or invalid address, the last value read is 
+    supplied instead [17]. If this goes unhandled by the program, execution may continue in an 
+    unpredictable state.
