@@ -1,58 +1,56 @@
 __START_HEADER__
-LDYC 40;
+LDYC 0;
 STY 512;
-LDYC 40;
+LDYC 0;
 STY 513;
 __END_HEADER__
-LABEL testPallet
+LABEL finalMessage
 RAW
-4 255 0 0 0 255 0 0 0 255 255 255 255 
+"Goodbye World!" 10 0
 END
-LABEL texture01
+LABEL hello
 RAW
-4 4 4 1 75 75 75 75 
+"Hello World!" 10 0
 END
-LABEL loadTestPallet
-LDYC 0x06;
-STY 65534;
-STRC 65534 testPallet;
-SYS 0x08;
-RTS;
-LABEL loadTestTexture
-LDYC 0x04;
-STY 65534;
-STRC 65534 texture01;
-SYS 0x08;
-RTS;
-LABEL drawPlayer
-LDYC 0x05;
-STY 65534;
-LDY 512;
-STY 65534;
-LDY 513;
-STY 65534;
+LABEL texture
+RAW
+1 2 3 4 5 
+END
+LABEL finishingProc
+STRC 65534 finalMessage;
+SYS 0x0A;
+LDAC 0;
+BRK;
+LABEL printPos
+SAL 4;
+LDA 512;
+ADCC 48;
+STA 65535;
+LDA 513;
+ADCC 48;
+STA 65535;
+LDYC 'h';
+STYS 0;
+LDYC 'i';
+STYS 1;
+LDYC 10;
+STYS 2;
 LDYC 0;
-STY 65534;
-LDYC 0;
-STY 65534;
-SYS 0x08;
-RTS;
-LABEL wait
-LDYC 0;
-STY 65534;
-LDYC 4;
-STY 65534;
-LDYC 0;
-STY 65534;
-LDYC 0;
-STY 65534;
-SYS 0x02;
+STYS 3;
+STRC 65534 256;
+SYS 0x0C;
+DAL 4;
 RTS;
 LABEL __MAIN__
-JSR loadTestPallet;
-JSR loadTestTexture;
-JSR drawPlayer;
-SYS 0x07;
-JSR wait;
+STRC 65534 finishingProc;
+SYS 0x09;
+LDA 512;
+CMPC 1;
+BEQ 3;
+JMPA main_IF0;
+STRC 65534 hello;
+SYS 0x0A;
+LABEL main_IF0
+JSR printPos;
 LDAC 0;
 BRK;

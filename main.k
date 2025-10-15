@@ -29,7 +29,9 @@ end
 
 proc:uint main()
     sys(0x09, finishingProc);
-    sys(0x0A, hello);
+    if(x==1)
+        sys(0x0A, hello);
+    end
     printPos();
     ret 0;
 end

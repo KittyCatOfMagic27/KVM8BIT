@@ -68,7 +68,8 @@ pub enum ExpressionType{
     #[default]
     Unspecified,
     Return,
-    Assignment
+    Assignment,
+    Conditional
 }
 
 #[derive(Default, Debug)]
@@ -101,6 +102,55 @@ pub struct Line {
     pub t: LineType
 }
 
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+pub enum BlockParentType {
+    #[default]
+    None, 
+    Procedure, Block 
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct BlockParent {
+    pub index: usize,
+    pub t: BlockParentType,
+}
+
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+pub enum BlockType {
+    #[default]
+    None, 
+    If, While, Else, Elif, Anon 
+}
+
+#[derive(Default, Debug)]
+pub struct Block<'a>{
+    pub distance: u8, //distance from procedure block 
+    pub parentDirectory: Vec<BlockParent>,
+    pub block_type: BlockType, 
+    pub con: Option<Expression<'a>>, 
+    pub allocated_bytes: u8,
+    pub variables: Vec<Variable<'a>>,
+    pub expressions: Vec<Expression<'a>>,
+    pub blocks: Vec<Block<'a>>,
+    pub lines: Vec<Line>
+}
+
+impl<'a> Block<'a>{
+    pub fn getBlock(&self, directory: &[BlockParent]) -> &Block<'a> {
+        if directory.len() == 0 {
+            return self;
+        }
+        return self.blocks[directory[0].index].getBlock(&directory[1..directory.len()]);
+    }
+
+    pub fn getBlock_mut(& mut self, directory: &[BlockParent]) -> & mut Block<'a> {
+        if directory.len() == 0 {
+            return self;
+        }
+        return self.blocks[directory[0].index].getBlock_mut(&directory[1..directory.len()]);
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct Procedure<'a>{
     pub allocated_bytes: u8,
@@ -109,7 +159,18 @@ pub struct Procedure<'a>{
     pub arguments: Vec<Variable<'a>>,
     pub variables: Vec<Variable<'a>>,
     pub expressions: Vec<Expression<'a>>,
+    pub blocks: Vec<Block<'a>>,
     pub lines: Vec<Line>
+}
+
+impl<'a> Procedure<'a>{
+    pub fn getBlock(&self, directory: &[BlockParent]) -> &Block<'a> {
+        return self.blocks[directory[0].index].getBlock(&directory[1..directory.len()]);
+    }
+
+    pub fn getBlock_mut(& mut self, directory: &[BlockParent]) -> & mut Block<'a> {
+        return self.blocks[directory[0].index].getBlock_mut(&directory[1..directory.len()]);
+    }
 }
 
 #[derive(Default, Debug)]
@@ -120,6 +181,16 @@ pub struct Program<'a>{
     pub static_variables: Vec<Variable<'a>>,
     pub expressions: Vec<Expression<'a>>,
     pub procs: Vec<Procedure<'a>>
+}
+
+impl<'a> Program<'a>{
+    pub fn getBlock(&self, directory: &[BlockParent]) -> &Block<'a> {
+        return self.procs[directory[0].index].getBlock(&directory[1..directory.len()]);
+    }
+
+    pub fn getBlock_mut(& mut self, directory: &[BlockParent]) -> &mut Block<'a> {
+        return self.procs[directory[0].index].getBlock_mut(&directory[1..directory.len()]);
+    }
 }
 
 pub fn toValueType(s: &str) -> Result<DataValueType, ParserError>{

@@ -23,6 +23,9 @@ pub enum ParserError {
     #[error("(ParserError) Missing para in procedure definition.")]
     NoParaProcDef,
 
+    #[error("(ParserError) Missing para in conditional block definition.")]
+    NoParaConBlockDef,
+
     #[error("(ParserError) Para not terminated.")]
     NoParaNotTerminated,
 
@@ -49,6 +52,9 @@ pub enum ParserError {
 
     #[error("(ParserError) Attempted to put an expression outside of a procedure.")]
     AttemptedExpressionInProgram,
+
+    #[error("(ParserError) Attempted to put a(n) '{0:?}' block outside of a procedure.")]
+    AttemptedBlockInProgram(BlockType),
 
     #[error("(ParserError) Attempted to put the variable '{0}' outside of a procedure.")]
     AttemptedVariableInProgram(String),
@@ -82,6 +88,9 @@ pub enum ParserError {
 
     #[error("(ParserError) Unimplemented DataValueType {0:?}, couldn't find size.")]
     UnimplementedDataValueType(DataValueType),
+
+    #[error("(ParserError) Unimplemented BlockType {0:?}, couldn't create block.")]
+    UnimplementedBlockType(BlockType),
 
     #[error("{0}")]
     LexError(String)
@@ -212,7 +221,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                             $tk_iter.next();
                             var_size = match $tk_iter.next().unwrap().tk_data.parse::<i16>() {
                                 Ok(s) => s,
-                                Err(e) => return Err(ParserError::MissingSizeForBufferNotNumber)
+                                Err(_e) => return Err(ParserError::MissingSizeForBufferNotNumber)
                             };
                             if $tk_iter.next().unwrap().tk_data != "]" {
                                 return Err(ParserError::MissingClosingSqBracket);
@@ -344,6 +353,9 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
     let mut nextDAT = DataAllocationType::Stack(0);
     let mut resolvableErrors: Vec<ParserError> = Default::default();
     let mut current_var_def: Option<(usize, VarDest)> = None;
+    let mut creatingBlock: BlockType = BlockType::None;
+    let mut current_block: Option<Vec<BlockParent>> = None;
+
     while tk_iter.len() != 0{
         tk=tk_iter.nth(0).unwrap();
         match tk.tk_type {
@@ -400,7 +412,15 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                     Some(p) => p,
                     None => return Err(ParserError::ExcessiveEndStatement)
                 };
-                current_proc = None;
+                match current_block {
+                    Some(ref mut directory) => {
+                        directory.pop();
+                        if directory.len() == 1{
+                            current_block = None;
+                        }
+                    }
+                    None => current_proc = None
+                }
             }
             TokenType::KeywordRet => {
                 //start expression
@@ -469,9 +489,22 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                             }
                         }
                         if pushExpr{
-                            let len = program.procs[p].expressions.len();
-                            program.procs[p].lines.push(Line {index: len, t: LineType::Expression});
-                            program.procs[p].expressions.push(unpkg_expr.clone());
+                            match current_block {
+                                Some(ref directory) => {
+                                    // if in block, get block
+                                    let mut block = program.getBlock_mut(&directory);
+                                    let len = block.expressions.len();
+                                    block.lines.push(Line {index: len, t: LineType::Expression});
+                                    block.expressions.push(unpkg_expr.clone());
+
+                                }
+                                None => {
+                                    // if in base proc
+                                    let len = program.procs[p].expressions.len();
+                                    program.procs[p].lines.push(Line {index: len, t: LineType::Expression});
+                                    program.procs[p].expressions.push(unpkg_expr.clone());
+                                }
+                            }
                         }
                     }
                     None => {
@@ -514,6 +547,81 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                     return Err(resolvableErrors[0].clone());
                 }
             }
+            TokenType::KeywordIf => {
+                tk=tk_iter.next().unwrap(); //next token
+                if tk.tk_data != "(" {return Err(ParserError::NoParaConBlockDef);}
+                creatingBlock = BlockType::If;
+            }
+            TokenType::KeywordWhile => {
+                tk=tk_iter.next().unwrap(); //next token
+                if tk.tk_data != "(" {return Err(ParserError::NoParaConBlockDef);}
+                creatingBlock = BlockType::While;
+            }
+            TokenType::Symbol => {
+                match tk.tk_data {
+                    ")" => {
+                        match creatingBlock{
+                            BlockType::While |
+                            BlockType::If => {
+                                match current_proc { 
+                                    Some(p) => {
+                                        let mut unpkg_expr = match expr {
+                                            Some(ref mut exp) => exp,
+                                            None => return Err(ParserError::UnnecessarySemicolon)
+                                        };
+                                        unpkg_expr.t = ExpressionType::Conditional;
+
+                                        let mut new_block: Block<'a> = Default::default();
+                                        new_block.con = Some(unpkg_expr.clone());
+
+                                        //load up parentDirectory, if of block copy partent and add parent index
+                                        new_block.parentDirectory.push(BlockParent{
+                                            index: p,
+                                            t: BlockParentType::Procedure
+                                        });
+
+                                        new_block.block_type = creatingBlock;
+
+                                        //TODO: evaluate distance
+                                        new_block.distance = 1;
+
+                                        //push block to parent
+                                        let len = program.procs[p].blocks.len();
+
+                                        //set cblock
+                                        let mut cblock = new_block.parentDirectory.clone();
+                                        cblock.push(BlockParent{
+                                            t: BlockParentType::Block, 
+                                            index:len
+                                        });
+                                        current_block = Some(cblock);
+
+                                        //push block to parent
+                                        program.procs[p].lines.push(Line {index: len, t: LineType::Block});
+                                        program.procs[p].blocks.push(new_block);
+                                        expr = None;
+                                    }
+                                    None => return Err(ParserError::AttemptedBlockInProgram(BlockType::If))
+                                }
+                                creatingBlock = BlockType::None;
+                            }
+                            BlockType::None => {
+                                match expr {
+                                    Some(ref mut exp) => exp.tks.push(tk),
+                                    None => return Err(ParserError::StrayValue(tk.tk_data.to_string()))
+                                };
+                            }
+                            _ => return Err(ParserError::UnimplementedBlockType(creatingBlock))
+                        }
+                    }
+                    _ => {
+                        match expr {
+                            Some(ref mut exp) => exp.tks.push(tk),
+                            None => return Err(ParserError::StrayValue(tk.tk_data.to_string()))
+                        };
+                    }
+                }
+            }
             TokenType::KeywordUint => {
                 declareVariable!(current_var_def, nextDAT, DataValueType::Uint, tk_iter, expr, program, current_proc);
                 nextDAT = DataAllocationType::Stack(0);
@@ -548,6 +656,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                     None => return Err(ParserError::StrayAssignment)
                 };
             }
+            TokenType::OpEq |
             TokenType::OpAdd |
             TokenType::OpSubtract => {
                 match expr {
@@ -555,7 +664,6 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                     None => return Err(ParserError::StrayOperator(tk.tk_data.to_string()))
                 };
             }
-            TokenType::Symbol |
             TokenType::CharLiteral |
             TokenType::StringLiteral |
             TokenType::NumberLiteral |
@@ -581,7 +689,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
             }
             TokenType::UnidentifiedLabel => {
                 // identify
-                let variable = match grabVariableSetToken!(tk, program, current_proc){
+                let _variable = match grabVariableSetToken!(tk, program, current_proc){
                     Some(v) => {
                         tk.tk_type = TokenType::Variable;
                         if v.t.a == DataAllocationType::Const {
@@ -597,7 +705,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                     // let case for other label types and if none of them are matched throw error
                     None => {
                         match grabProcedure!(tk.tk_data, program){
-                            Some(ref p) => {
+                            Some(_) => {
                                 tk.tk_type = TokenType::ProcedureCall;
                             }
                             None => return Err(ParserError::UnidentifiedLabel(tk.tk_data.to_string()))

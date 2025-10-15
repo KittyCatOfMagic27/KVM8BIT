@@ -60,8 +60,20 @@ pub fn charToSymbol(c: char) -> TokenType {
 pub fn charToOp(c: char) -> TokenType {
     match c{
         '+' => return TokenType::OpAdd,
+        '-' => return TokenType::OpSubtract,
         '=' => return TokenType::OpAssign,
+        '!' => return TokenType::OpNot,
         _ => return TokenType::Op,
+    }
+}
+
+pub fn strToOp(s: &str) -> TokenType {
+    match s{
+        "==" => return TokenType::OpEq,
+        ">=" => return TokenType::OpGreatEq,
+        "<=" => return TokenType::OpLessEq,
+        "!=" => return TokenType::OpNEq,
+        &_ => return TokenType::Op,
     }
 }
 

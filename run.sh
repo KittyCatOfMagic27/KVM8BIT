@@ -5,9 +5,14 @@ echo "Loaded runk!"
 function runk() {
     first_flag=$1
     first_flag=${first_flag:="--help"}
+    file=""
+
     if [ $first_flag == "-fc" ]; then
         cd ./KCompilerRust
-        cargo run -- ../$2
+        if [ -n "${2}" ]; then 
+            file="../$2"
+        fi
+        cargo run -- $file
         cd ../
         g++ -o kasmCompiler kasmCompiler.cpp
         g++ -o vm_run vm_run.cpp -lSDL2main -lSDL2
@@ -17,7 +22,16 @@ function runk() {
         ./KCompilerRust/target/debug/KCompilerRust $2
         ./kasmCompiler
         ./vm_run
-        echo "doesnt compile wtf"
+    elif [ $first_flag == "-co" ]; then
+        cd ./KCompilerRust
+        if [ -n "${2}" ]; then 
+            file="../$2"
+        fi
+        cargo run -- $file
+        cd ../
+        g++ -o kasmCompiler kasmCompiler.cpp
+        g++ -o vm_run vm_run.cpp -lSDL2main -lSDL2
+        ./kasmCompiler
     elif [ $first_flag == "-r" ]; then
         ./vm_run
     elif [ $first_flag == "--help" ]; then

@@ -61,7 +61,7 @@ fn getNextToken<'a,'b>(file_data: &'a String, index: &'b mut usize)->Result<Toke
 
     match c {
         // if starting with symbol
-        '+' | '-' | '=' | '>' | '<' =>{
+        '+' | '-' =>{
             *index+=1;
 
             return Ok(tokenize(
@@ -70,6 +70,28 @@ fn getNextToken<'a,'b>(file_data: &'a String, index: &'b mut usize)->Result<Toke
                 index,
                 keywords::charToOp(c)
             ));
+        }
+        // if starting with symbol
+        '=' | '>' | '<' | '!' =>{
+            *index+=1;
+
+            if *index < file_data.len() 
+            && '=' == (file_data.as_bytes()[*index] as char) {
+                *index+=1;
+                return Ok(tokenize(
+                    file_data,
+                    start,
+                    index,
+                    keywords::strToOp(&file_data[start..*index])
+                ));
+            } else {
+                return Ok(tokenize(
+                    file_data,
+                    start,
+                    index,
+                    keywords::charToOp(c)
+                ));
+            }
         }
         '(' | ')' | ';' | ',' | ']' | '[' =>{
             *index+=1;

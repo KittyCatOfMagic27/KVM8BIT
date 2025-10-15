@@ -30,7 +30,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // if file provided, use it
     let args: Vec<String> = env::args().collect();
     if args.len() > 1 {
-        println!("{args:?}");
         file_name = &args[1];
     }
 

@@ -46,6 +46,12 @@ pub enum CompilerError {
     #[error("(CompilerError) Unimplemented Embedded Procedure '{0}'.")]
     UnimplementedEmbeddedFunction(String),
 
+    #[error("(CompilerError) Unimplemented BlockType '{0:?}'.")]
+    UnimplementedBlockType(BlockType),
+
+    #[error("(CompilerError) Unimplemented ConditionType '{0:?}'.")]
+    UnimplementedConditionType(ConditionType),
+
     #[error("(CompilerError) Stand alone token of {1} of type {0:?}.")]
     InvalidStandAloneToken(TokenType, String),
 
@@ -69,6 +75,9 @@ pub enum CompilerError {
 
     #[error("(CompilerError) Invalid buffer indexing.")]
     InvalidBufferIndexing,
+
+    #[error("(CompilerError) Missing condition in block type {0:?}.")]
+    MissingCondition(BlockType),
     
     #[error("(CompilerError) Register {0:?} overriden within expression with operator '{1}'.")]
     RegOverridden(ExpressionOutLocation, String),
@@ -87,7 +96,7 @@ pub enum CompilerError {
 }
 
 #[derive(Default, Debug, PartialEq, Clone)]
-enum ExpressionOutLocation{
+pub enum ExpressionOutLocation{
     #[default]
     None,
     RegisterA,
@@ -181,7 +190,7 @@ fn moveOutTo(
                     expressionString.push_str(&(0x0100+(s_addr as u16)).to_string());
                     expressionString.push_str(";\n");
                 }
-                ExpressionOutLocation::Heap(addr_origin) =>{
+                ExpressionOutLocation::Heap(_) =>{
                     expressionString.push_str(
                         &moveOutTo(start_loc.clone(), ExpressionOutLocation::RegisterY)?
                     );
@@ -291,7 +300,7 @@ fn moveOutTo(
 #[macro_export]
 macro_rules! grabVariableCompNP {
     ($tuple: expr, $program: expr) => ({
-        let mut variable = match $tuple.1 {
+        let variable = match $tuple.1 {
             VarDest::Heap => Ok($program.heap_variables[$tuple.0]),
             VarDest::ProgramStatic => Ok($program.static_variables[$tuple.0]),
             _ => Err(CompilerError::UnimplementedVarDest($tuple.1)),
@@ -300,17 +309,43 @@ macro_rules! grabVariableCompNP {
     })
 }
 
-fn evaluateExpr<'a>(
-    expr: Expression<'a>,
-    program: &'a Program, 
-    current_proc: &'a Procedure
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+enum EvaluationPackageType {
+    #[default]
+    None,
+    Procedure,
+    Block
+}
+
+#[derive(Debug)]
+struct EvaluationPackage<'a>{
+    pub lines: &'a Vec<Line>,
+    pub expressions: &'a Vec<Expression<'a>>,
+    pub blocks: &'a Vec<Block<'a>>,
+    pub directory: Vec<BlockParent>,
+    pub allocated_bytes: u8,
+    pub t: EvaluationPackageType
+}
+
+#[derive(Default, Debug, PartialEq, Clone, Copy)]
+pub enum ConditionType {
+    #[default]
+    Eq, 
+    NEq, Lesser /*BMI*/, Greater /*no idea*/
+}
+
+//implement for evaluation package
+fn evaluateExpr(
+    expr: Expression<'_>,
+    program: &Program, 
+    current_pkg: &EvaluationPackage
 ) -> Result<(String, ExpressionOutLocation), CompilerError> {
     #[macro_export]
     macro_rules! grabVariableComp {
-        ($tuple: expr, $program: expr, $current_proc: expr) => ({
-            let mut variable = match $tuple.1 {
-                VarDest::CurrentProc => Ok($current_proc.variables[$tuple.0]),
-                VarDest::Argument => Ok($current_proc.arguments[$tuple.0]),
+        ($tuple: expr, $program: expr, $current_pkg: expr) => ({
+            let variable = match $tuple.1 {
+                VarDest::CurrentProc => Ok(program.procs[$current_pkg.directory[0].index].variables[$tuple.0]),
+                VarDest::Argument => Ok(program.procs[$current_pkg.directory[0].index].arguments[$tuple.0]),
                 VarDest::Heap => Ok($program.heap_variables[$tuple.0]),
                 VarDest::ProgramStatic => Ok($program.static_variables[$tuple.0]),
                 _ => Err(CompilerError::UnimplementedVarDest($tuple.1)),
@@ -341,7 +376,7 @@ fn evaluateExpr<'a>(
                                 }
                             },
                             program,
-                            current_proc
+                            current_pkg
                         )?;
                         
                         //action
@@ -356,7 +391,8 @@ fn evaluateExpr<'a>(
             }
         })
     }
-    
+
+    let mut conditionType: ConditionType = ConditionType::Eq;
     let mut expressionString: String = Default::default();
     let mut expressionOutput: ExpressionOutLocation = ExpressionOutLocation::None;
     let mut startingIndex: usize = 0;
@@ -365,7 +401,7 @@ fn evaluateExpr<'a>(
     if exprTksLen == 1 {
         expressionOutput = match expr.tks[0].tk_type {
             TokenType::Variable => {
-                let var = grabVariableComp!(expr.tks[0].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_proc)?;
+                let var = grabVariableComp!(expr.tks[0].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_pkg)?;
                 let o = match var.t.a{
                     DataAllocationType::Stack(addr) => ExpressionOutLocation::Stack(addr),
                     DataAllocationType::Heap(addr) => ExpressionOutLocation::Heap(addr),
@@ -397,7 +433,7 @@ fn evaluateExpr<'a>(
         match expr.tks[0].tk_type {
             TokenType::Variable => {
                 // get variable
-                let var = grabVariableComp!(expr.tks[0].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_proc)?;
+                let var = grabVariableComp!(expr.tks[0].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_pkg)?;
                 let o = match var.t.a{
                     //when stack
                     DataAllocationType::Stack(addr) => {
@@ -413,7 +449,7 @@ fn evaluateExpr<'a>(
                                         addr + {
                                             match expr.tks[2].tk_data.parse::<u8>() {
                                                 Ok(v) => v,
-                                                Err(e) => return Err(CompilerError::InvalidAddress(expr.tks[2].tk_data.to_string())),
+                                                Err(_e) => return Err(CompilerError::InvalidAddress(expr.tks[2].tk_data.to_string())),
                                             }
                                         }
                                     )
@@ -433,7 +469,7 @@ fn evaluateExpr<'a>(
                 let exprpkg = evaluateExpr(
                     Expression {t:ExpressionType::Unspecified, tks:expr.tks[startingIndex..exprTksLen].to_vec()},
                     program,
-                    current_proc
+                    current_pkg
                 )?;
                 expressionString.push_str(&exprpkg.0);
                 expressionOutput = exprpkg.1;
@@ -448,7 +484,7 @@ fn evaluateExpr<'a>(
                 let exprpkg = evaluateExpr(
                     Expression {t:ExpressionType::Unspecified, tks:expr.tks[startingIndex..exprTksLen].to_vec()},
                     program,
-                    current_proc
+                    current_pkg
                 )?;
                 expressionString.push_str(&exprpkg.0);
                 expressionOutput = exprpkg.1;
@@ -471,7 +507,7 @@ fn evaluateExpr<'a>(
             let tk = expr.tks[i];
             match tk.tk_type {
                 TokenType::Variable => {
-                    let var = grabVariableComp!(expr.tks[i].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_proc)?;
+                    let var = grabVariableComp!(expr.tks[i].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_pkg)?;
                     let o = match var.t.a{
                         DataAllocationType::Stack(addr) => {
                             match var.t.v {
@@ -486,7 +522,7 @@ fn evaluateExpr<'a>(
                                             addr + {
                                                 match expr.tks[i-1].tk_data.parse::<u8>() {
                                                     Ok(v) => v,
-                                                    Err(e) => return Err(CompilerError::InvalidAddress(expr.tks[i-1].tk_data.to_string())),
+                                                    Err(_e) => return Err(CompilerError::InvalidAddress(expr.tks[i-1].tk_data.to_string())),
                                                 }
                                             }
                                         )
@@ -527,13 +563,13 @@ fn evaluateExpr<'a>(
                                                 if !l.starts_with("0x") {
                                                     match l.parse::<u16>() {
                                                         Ok(v) => v,
-                                                        Err(e) => return Err(CompilerError::InvalidAddress(l.clone())),
+                                                        Err(_e) => return Err(CompilerError::InvalidAddress(l.clone())),
                                                     }
                                                 }
                                                 else{
                                                     match u16::from_str_radix(l.trim_start_matches("0x"), 16) {
                                                         Ok(v) => v,
-                                                        Err(e) => return Err(CompilerError::InvalidAddress(l.clone())),
+                                                        Err(_e) => return Err(CompilerError::InvalidAddress(l.clone())),
                                                     }
                                                 }
                                             })
@@ -573,8 +609,8 @@ fn evaluateExpr<'a>(
                             // no returns
                             i = 1;
                             let mut args: Vec<ExpressionOutLocation> = vec![];
-                            let mut arg_count = 0;
-                            procSyntax!(i, arg_count, exprTksLen, exprpkg, {
+                            let mut _arg_count = 0;
+                            procSyntax!(i, _arg_count, exprTksLen, exprpkg, {
                                 args.push(exprpkg.1.clone());
                             });
 
@@ -627,11 +663,11 @@ fn evaluateExpr<'a>(
                     let exprpkg = evaluateExpr(
                         Expression {t:ExpressionType::Unspecified, tks:expr.tks[(i+1)..exprTksLen].to_vec()},
                         program,
-                        current_proc
+                        current_pkg
                     )?;
 
                     //check if both args exist
-                    let mut arg2: ExpressionOutLocation = ExpressionOutLocation::None;
+                    let arg2: ExpressionOutLocation;
                     if args.len() < 1 {
                         return Err(CompilerError::UnidentifiedError);
                     }
@@ -656,7 +692,7 @@ fn evaluateExpr<'a>(
 
                     //do a diff add based on arg2 type
                     match arg2 {
-                        ExpressionOutLocation::Stack(addr) => {
+                        ExpressionOutLocation::Stack(_) => {
                             expressionString.push_str(
                                 &moveOutTo(arg2.clone(), ExpressionOutLocation::Heap(0x0000))?
                             );
@@ -674,6 +710,58 @@ fn evaluateExpr<'a>(
 
                     break;
                 }
+                TokenType::OpEq => {
+                    // eval any exprs after (this reverses priority, fix later)
+                    let exprpkg = evaluateExpr(
+                        Expression {t:ExpressionType::Unspecified, tks:expr.tks[(i+1)..exprTksLen].to_vec()},
+                        program,
+                        current_pkg
+                    )?;
+
+                    //check if both args exist
+                    let arg2: ExpressionOutLocation;
+                    if args.len() < 1 {
+                        return Err(CompilerError::UnidentifiedError);
+                    }
+
+                    // put arg1 in A reg
+                    expressionString.push_str(&exprpkg.0);
+                    if args[0] == ExpressionOutLocation::RegisterA && exprpkg.1 == ExpressionOutLocation::RegisterA {
+                        return Err(CompilerError::RegOverridden(ExpressionOutLocation::RegisterA, "+".to_string()));
+                    }
+                    else if exprpkg.1 == ExpressionOutLocation::RegisterA {
+                        arg2 = args[0].clone();
+                    }
+                    else if args[0] == ExpressionOutLocation::RegisterA{
+                        arg2 = exprpkg.1;
+                    }
+                    else {
+                        expressionString.push_str(
+                            &moveOutTo(args[0].clone(), ExpressionOutLocation::RegisterA)?
+                        );
+                        arg2 = exprpkg.1;
+                    }
+
+                    //do a diff add based on arg2 type
+                    match arg2 {
+                        ExpressionOutLocation::Stack(_) => {
+                            expressionString.push_str(
+                                &moveOutTo(arg2.clone(), ExpressionOutLocation::Heap(0x0000))?
+                            );
+                            expressionString.push_str("CMP 0x00;\n");
+                        }
+                        ExpressionOutLocation::Literal(l) => {
+                            expressionString.push_str("CMPC ");
+                            expressionString.push_str(&l);
+                            expressionString.push_str(";\n");
+                        }
+                        _ => return Err(CompilerError::UnimplementedArgumentType(arg2))
+                    }
+
+                    expressionOutput = ExpressionOutLocation::None;
+
+                    break;
+                }
                 _ => return Err(CompilerError::UnimplementedTokenType(tk.tk_type))
             }
             i+=1;
@@ -687,6 +775,12 @@ fn evaluateExpr<'a>(
                 &moveOutTo(expressionOutput.clone(), ExpressionOutLocation::RegisterA)?
             );
         }
+        ExpressionType::Conditional => {
+            match conditionType {
+                ConditionType::Eq => expressionString.push_str("BEQ 3;\n"),
+                _ => return Err(CompilerError::UnimplementedConditionType(conditionType))
+            }
+        }
         _ => {}
     }
     if expressionOutput == ExpressionOutLocation::None && args.len() == 1 {
@@ -695,13 +789,116 @@ fn evaluateExpr<'a>(
     return Ok((expressionString, expressionOutput));
 }
 
+fn iterateOverLines(p: EvaluationPackage<'_>, program: &Program<'_>, contents: &mut String) -> Result<(), CompilerError>{
+    for index in 0..p.lines.len() as usize{
+        match p.lines[index].t {
+            LineType::Expression => {
+                match p.expressions[p.lines[index].index].t {
+                    ExpressionType::Return => {
+                        if p.expressions[p.lines[index].index].tks.len() != 0 {
+                            contents.push_str(
+                                evaluateExpr(
+                                    p.expressions[p.lines[index].index].clone(),
+                                    program,
+                                    &p
+                                )?.0.as_str()
+                            );
+                        }
+                        if p.allocated_bytes != 0 {
+                            contents.push_str("DAL ");
+                            contents.push_str(&p.allocated_bytes.to_string());
+                            contents.push_str(";\n");
+                        }
+                        if p.t == EvaluationPackageType::Procedure {
+                            if program.procs[p.directory[0].index].label == "main" {
+                                contents.push_str("BRK;\n");
+                            }
+                            else {
+                                contents.push_str("RTS;\n");
+                            }
+                        }
+                    }
+                    ExpressionType::Unspecified |
+                    ExpressionType::Assignment => {
+                        contents.push_str(
+                            evaluateExpr(
+                                p.expressions[p.lines[index].index].clone(),
+                                program,
+                                &p
+                            )?.0.as_str()
+                        );
+                    }
+                    _ => return Err(CompilerError::UnimplementedExprType(p.expressions[p.lines[index].index].t))
+                }
+            }
+            LineType::Block => {
+                //grab info
+                let mut directory = p.directory.clone();
+                let index = p.lines[index].index;
+                directory.push(BlockParent {
+                    index: index,
+                    t: BlockParentType::Block
+                });
+                let block = program.getBlock(&directory);
+
+                //place condition and TODO: allocate var space & displace variable queries
+                let mut escape_label: String = Default::default();
+                match block.block_type {
+                    BlockType::If => {
+                        escape_label.push_str(program.procs[directory[0].index].label);
+                        escape_label.push_str("_IF");
+                        escape_label.push_str(&index.to_string());
+                        
+                        match block.con {
+                            Some(ref con) => {
+                                contents.push_str(
+                                    &evaluateExpr(con.clone(), program, &p)?.0
+                                );
+                            }
+                            None => return Err(CompilerError::MissingCondition(block.block_type))
+                        }
+
+                        contents.push_str("JMPA ");
+                        contents.push_str(&escape_label);
+                        contents.push_str(";\n");
+                    }
+                    _ => return Err(CompilerError::UnimplementedBlockType(block.block_type))
+                }
+
+                // build package
+                let new_pkg = EvaluationPackage {
+                    lines:&block.lines,
+                    expressions:&block.expressions,
+                    blocks:&block.blocks,
+                    directory:directory,
+                    allocated_bytes:block.allocated_bytes,
+                    t:EvaluationPackageType::Block
+                };
+
+                //eval expressions
+                match iterateOverLines(new_pkg, program, contents) {
+                    Ok(_) => (),
+                    Err(e) => return Err(e)
+                };
+
+                //place escape
+                contents.push_str("LABEL ");
+                contents.push_str(&escape_label);
+                contents.push_str("\n");
+            }
+            _ => return Err(CompilerError::UnimplementedLineType(p.lines[index].t))
+        }
+    }
+    return Ok(());
+}
+
 pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), CompilerError>{
     let mut procs: Vec<String> = vec![]; 
     let mut header: String = Default::default();
     let mut label_header: String = Default::default();
 
     let mut hasMain = false;
-    println!("{program:#2?}");
+    // println!("{program:#2?}");
 
     if program.expressions.len() != 0 {
         header.push_str("__START_HEADER__\n");
@@ -778,7 +975,8 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
         header.push_str("__END_HEADER__\n");
     }
 
-    for p in &program.procs {
+    for i in 0..program.procs.len() {
+        let p = &program.procs[i];
         // println!("{p:#2?}");
         let mut contents: String = Default::default();
 
@@ -797,49 +995,20 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
             contents.push_str(&p.allocated_bytes.to_string());
             contents.push_str(";\n");
         }
-        
-        for index in 0..p.lines.len() as usize{
-            match p.lines[index].t {
-                LineType::Expression => {
-                    match p.expressions[p.lines[index].index].t {
-                        ExpressionType::Return => {
-                            if p.expressions[p.lines[index].index].tks.len() != 0 {
-                                contents.push_str(
-                                    evaluateExpr(
-                                        p.expressions[p.lines[index].index].clone(),
-                                        &program,
-                                        p
-                                    )?.0.as_str()
-                                );
-                            }
-                            if p.allocated_bytes != 0 {
-                                contents.push_str("DAL ");
-                                contents.push_str(&p.allocated_bytes.to_string());
-                                contents.push_str(";\n");
-                            }
-                            if p.label == "main" {
-                                contents.push_str("BRK;\n");
-                            }
-                            else {
-                                contents.push_str("RTS;\n");
-                            }
-                        }
-                        ExpressionType::Unspecified |
-                        ExpressionType::Assignment => {
-                            contents.push_str(
-                                evaluateExpr(
-                                    p.expressions[p.lines[index].index].clone(),
-                                    &program,
-                                    p
-                                )?.0.as_str()
-                            );
-                        }
-                        _ => return Err(CompilerError::UnimplementedExprType(p.expressions[p.lines[index].index].t))
-                    }
-                }
-                _ => return Err(CompilerError::UnimplementedLineType(p.lines[index].t))
-            }
-        }
+
+        match iterateOverLines(EvaluationPackage {
+            lines:&p.lines,
+            expressions:&p.expressions,
+            blocks:&p.blocks,
+            directory:vec![
+                BlockParent {index: i, t: BlockParentType::Procedure}
+            ],
+            allocated_bytes:p.allocated_bytes,
+            t:EvaluationPackageType::Procedure
+        }, &program, &mut contents) {
+            Ok(_) => (),
+            Err(e) => return Err(e)
+        };
 
         if p.label == "main" {
             procs.insert(0, contents.clone());
@@ -847,7 +1016,6 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
         else {
             procs.push(contents.clone());
         }
-        // println!("{contents}");
     }
 
     if !hasMain {
@@ -856,28 +1024,28 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
 
     let mut out_file_path: File = match File::create(out_file) {
         Ok(f) => f,
-        Err(e) => return Err(CompilerError::UnableToOpenOutFile(out_file.to_string()))
+        Err(_e) => return Err(CompilerError::UnableToOpenOutFile(out_file.to_string()))
     };
 
     match write!(out_file_path,"{}",header) { 
         Ok(_) => (),
-        Err(e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
+        Err(_e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
     };
 
     match write!(out_file_path,"{}",label_header) { 
         Ok(_) => (),
-        Err(e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
+        Err(_e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
     };
 
     for i in 1..procs.len() {
         match write!( out_file_path, "{}", procs[i]) {
             Ok(_) => (),
-            Err(e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
+            Err(_e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
         };
     }
     match write!( out_file_path, "{}", procs[0]) {
         Ok(_) => (),
-        Err(e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
+        Err(_e) => return Err(CompilerError::UnableToWriteOutFile(out_file.to_string()))
     };
     
     return Ok(());
