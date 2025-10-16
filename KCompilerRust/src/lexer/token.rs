@@ -21,6 +21,8 @@ pub enum TokenType{
     OpEq,
     OpGreatEq,
     OpLessEq,
+    OpGreat,
+    OpLess,
     OpNEq,
     KeywordString,
     KeywordUint,

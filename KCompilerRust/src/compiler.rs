@@ -183,14 +183,7 @@ fn moveOutTo(
         }
         ExpressionOutLocation::Heap(addr) => {
             match start_loc {
-                ExpressionOutLocation::Stack(s_addr) =>{
-                    expressionString.push_str("STRC ");
-                    expressionString.push_str(&addr.to_string());
-                    expressionString.push_str(" ");
-                    expressionString.push_str(&(0x0100+(s_addr as u16)).to_string());
-                    expressionString.push_str(";\n");
-                }
-                ExpressionOutLocation::Heap(_) =>{
+                ExpressionOutLocation::Stack(_) =>{
                     expressionString.push_str(
                         &moveOutTo(start_loc.clone(), ExpressionOutLocation::RegisterY)?
                     );
@@ -198,6 +191,17 @@ fn moveOutTo(
                     expressionString.push_str(
                         &moveOutTo(ExpressionOutLocation::RegisterY, dest.clone())?
                     );
+                }
+                ExpressionOutLocation::Heap(ref new_addr) =>{
+                    if *new_addr != addr{
+                        expressionString.push_str(
+                            &moveOutTo(start_loc.clone(), ExpressionOutLocation::RegisterY)?
+                        );
+
+                        expressionString.push_str(
+                            &moveOutTo(ExpressionOutLocation::RegisterY, dest.clone())?
+                        );
+                    }
                 }
                 ExpressionOutLocation::RegisterY => {
                     expressionString.push_str("STY ");
@@ -324,14 +328,15 @@ struct EvaluationPackage<'a>{
     pub blocks: &'a Vec<Block<'a>>,
     pub directory: Vec<BlockParent>,
     pub allocated_bytes: u8,
-    pub t: EvaluationPackageType
+    pub t: EvaluationPackageType,
+    pub else_block_dir: Option<Vec<BlockParent>>
 }
 
 #[derive(Default, Debug, PartialEq, Clone, Copy)]
 pub enum ConditionType {
     #[default]
     Eq, 
-    NEq, Lesser /*BMI*/, Greater /*no idea*/
+    NEq, Lesser /*BMI*/, Greater /*BPL*/, EqLesser, EqGreater
 }
 
 //implement for evaluation package
@@ -425,6 +430,19 @@ fn evaluateExpr(
             }
             _ => return Err(CompilerError::InvalidStandAloneToken(expr.tks[0].tk_type, expr.tks[0].tk_data.to_string())),
         };
+        match expr.t {
+            ExpressionType::ConditionalWhile |
+            ExpressionType::ConditionalIf => {
+                expressionString.push_str(
+                    &moveOutTo(expressionOutput.clone(), ExpressionOutLocation::RegisterA)?
+                );
+
+                expressionString.push_str("CMPC 0;\n");
+                conditionType = ConditionType::NEq;
+                expressionOutput = ExpressionOutLocation::None;
+            }
+            _ => {}
+        }
     } else if exprTksLen == 0 {
         return Err(CompilerError::EncounteredBlankExpression);
     } else if expr.t == ExpressionType::Assignment {
@@ -506,6 +524,17 @@ fn evaluateExpr(
         while i < exprTksLen {
             let tk = expr.tks[i];
             match tk.tk_type {
+                TokenType::CharLiteral |
+                TokenType::NumberLiteral |
+                TokenType::HexNumberLiteral => {
+                    args.push(ExpressionOutLocation::Literal(expr.tks[0].tk_data.to_string()));
+                }
+                TokenType::Register => {
+                    args.push(
+                        ExpressionOutLocation::reg(expr.tks[0].tk_data)
+                            .ok_or(CompilerError::UnimplementedReg(expr.tks[0].tk_data.to_string()))?
+                    );
+                }
                 TokenType::Variable => {
                     let var = grabVariableComp!(expr.tks[i].tk_comp_data.var().ok_or(CompilerError::UnidentifiedError)?, program, current_pkg)?;
                     let o = match var.t.a{
@@ -710,6 +739,61 @@ fn evaluateExpr(
 
                     break;
                 }
+                TokenType::OpSubtract => {
+                    // eval any exprs after (this reverses priority, fix later)
+                    let exprpkg = evaluateExpr(
+                        Expression {t:ExpressionType::Unspecified, tks:expr.tks[(i+1)..exprTksLen].to_vec()},
+                        program,
+                        current_pkg
+                    )?;
+
+                    //check if both args exist
+                    let arg2: ExpressionOutLocation;
+                    if args.len() < 1 {
+                        return Err(CompilerError::UnidentifiedError);
+                    }
+
+                    // put arg1 in A reg
+                    expressionString.push_str(&exprpkg.0);
+                    if args[0] == ExpressionOutLocation::RegisterA && exprpkg.1 == ExpressionOutLocation::RegisterA {
+                        return Err(CompilerError::RegOverridden(ExpressionOutLocation::RegisterA, "+".to_string()));
+                    }
+                    else if exprpkg.1 == ExpressionOutLocation::RegisterA {
+                        arg2 = args[0].clone();
+                        expressionString.push_str(
+                            &moveOutTo(args[0].clone(), ExpressionOutLocation::Heap(0x0000))?
+                        );
+                    }
+                    else if args[0] == ExpressionOutLocation::RegisterA{
+                        arg2 = exprpkg.1;
+                    }
+                    else {
+                        expressionString.push_str(
+                            &moveOutTo(args[0].clone(), ExpressionOutLocation::RegisterA)?
+                        );
+                        arg2 = exprpkg.1;
+                    }
+
+                    //do a diff add based on arg2 type
+                    match arg2 {
+                        ExpressionOutLocation::Stack(_) => {
+                            expressionString.push_str(
+                                &moveOutTo(arg2.clone(), ExpressionOutLocation::Heap(0x0000))?
+                            );
+                            expressionString.push_str("SBC 0x00;\n");
+                        }
+                        ExpressionOutLocation::Literal(l) => {
+                            expressionString.push_str("SBCC ");
+                            expressionString.push_str(&l);
+                            expressionString.push_str(";\n");
+                        }
+                        _ => return Err(CompilerError::UnimplementedArgumentType(arg2))
+                    }
+
+                    expressionOutput = ExpressionOutLocation::RegisterA;
+
+                    break;
+                }
                 TokenType::OpEq => {
                     // eval any exprs after (this reverses priority, fix later)
                     let exprpkg = evaluateExpr(
@@ -762,6 +846,71 @@ fn evaluateExpr(
 
                     break;
                 }
+                TokenType::OpGreatEq |
+                TokenType::OpLessEq |
+                TokenType::OpGreat |
+                TokenType::OpLess => {
+                    // eval any exprs after (this reverses priority, fix later)
+                    let exprpkg = evaluateExpr(
+                        Expression {t:ExpressionType::Unspecified, tks:expr.tks[(i+1)..exprTksLen].to_vec()},
+                        program,
+                        current_pkg
+                    )?;
+
+                    //check if both args exist
+                    let arg2: ExpressionOutLocation;
+                    if args.len() < 1 {
+                        return Err(CompilerError::UnidentifiedError);
+                    }
+
+                    // put arg1 in A reg
+                    expressionString.push_str(&exprpkg.0);
+                    if args[0] == ExpressionOutLocation::RegisterA && exprpkg.1 == ExpressionOutLocation::RegisterA {
+                        return Err(CompilerError::RegOverridden(ExpressionOutLocation::RegisterA, "+".to_string()));
+                    }
+                    else if exprpkg.1 == ExpressionOutLocation::RegisterA {
+                        arg2 = args[0].clone();
+                        expressionString.push_str(
+                            &moveOutTo(args[0].clone(), ExpressionOutLocation::Heap(0x0000))?
+                        );
+                    }
+                    else if args[0] == ExpressionOutLocation::RegisterA{
+                        arg2 = exprpkg.1;
+                    }
+                    else {
+                        expressionString.push_str(
+                            &moveOutTo(args[0].clone(), ExpressionOutLocation::RegisterA)?
+                        );
+                        arg2 = exprpkg.1;
+                    }
+
+                    //do a diff add based on arg2 type
+                    match arg2 {
+                        ExpressionOutLocation::Stack(_) => {
+                            expressionString.push_str(
+                                &moveOutTo(arg2.clone(), ExpressionOutLocation::Heap(0x0000))?
+                            );
+                            expressionString.push_str("CMP 0x00;\n");
+                        }
+                        ExpressionOutLocation::Literal(l) => {
+                            expressionString.push_str("CMPC ");
+                            expressionString.push_str(&l);
+                            expressionString.push_str(";\n");
+                        }
+                        _ => return Err(CompilerError::UnimplementedArgumentType(arg2))
+                    }
+
+                    conditionType = match tk.tk_type {
+                        TokenType::OpGreatEq => ConditionType::EqGreater,
+                        TokenType::OpLessEq => ConditionType::EqLesser,
+                        TokenType::OpGreat => ConditionType::Greater,
+                        TokenType::OpLess => ConditionType::Lesser,
+                        _ => return Err(CompilerError::UnidentifiedError)
+                    };
+                    expressionOutput = ExpressionOutLocation::None;
+
+                    break;
+                }
                 _ => return Err(CompilerError::UnimplementedTokenType(tk.tk_type))
             }
             i+=1;
@@ -775,9 +924,25 @@ fn evaluateExpr(
                 &moveOutTo(expressionOutput.clone(), ExpressionOutLocation::RegisterA)?
             );
         }
-        ExpressionType::Conditional => {
+        ExpressionType::ConditionalIf => {
             match conditionType {
                 ConditionType::Eq => expressionString.push_str("BEQ 3;\n"),
+                ConditionType::NEq => expressionString.push_str("BNE 3;\n"),
+                ConditionType::EqGreater => expressionString.push_str("BPL 5;\nBEQ 3;\n"),
+                ConditionType::EqLesser => expressionString.push_str("BMI 5;\nBEQ 3;\n"),
+                ConditionType::Greater => expressionString.push_str("BPL 3;\n"),
+                ConditionType::Lesser => expressionString.push_str("BMI 3;\n"),
+                _ => return Err(CompilerError::UnimplementedConditionType(conditionType))
+            }
+        }
+        ExpressionType::ConditionalWhile => {
+            match conditionType {
+                ConditionType::NEq => expressionString.push_str("BEQ 3;\n"),
+                ConditionType::Eq => expressionString.push_str("BNE 3;\n"),
+                ConditionType::EqGreater => expressionString.push_str("BMI 3;\n"),
+                ConditionType::EqLesser => expressionString.push_str("BPL 3;\n"),
+                ConditionType::Greater => expressionString.push_str("BMI 5;\nBEQ 3;\n"),
+                ConditionType::Lesser => expressionString.push_str("BPL 5;\nBEQ 3;\n"),
                 _ => return Err(CompilerError::UnimplementedConditionType(conditionType))
             }
         }
@@ -789,7 +954,7 @@ fn evaluateExpr(
     return Ok((expressionString, expressionOutput));
 }
 
-fn iterateOverLines(p: EvaluationPackage<'_>, program: &Program<'_>, contents: &mut String) -> Result<(), CompilerError>{
+fn iterateOverLines(p: & mut EvaluationPackage<'_>, program: &Program<'_>, contents: &mut String, mut label_discriminant: usize) -> Result<(), CompilerError>{
     for index in 0..p.lines.len() as usize{
         match p.lines[index].t {
             LineType::Expression => {
@@ -809,13 +974,11 @@ fn iterateOverLines(p: EvaluationPackage<'_>, program: &Program<'_>, contents: &
                             contents.push_str(&p.allocated_bytes.to_string());
                             contents.push_str(";\n");
                         }
-                        if p.t == EvaluationPackageType::Procedure {
-                            if program.procs[p.directory[0].index].label == "main" {
-                                contents.push_str("BRK;\n");
-                            }
-                            else {
-                                contents.push_str("RTS;\n");
-                            }
+                        if program.procs[p.directory[0].index].label == "main" {
+                            contents.push_str("BRK;\n");
+                        }
+                        else {
+                            contents.push_str("RTS;\n");
                         }
                     }
                     ExpressionType::Unspecified |
@@ -844,10 +1007,16 @@ fn iterateOverLines(p: EvaluationPackage<'_>, program: &Program<'_>, contents: &
                 //place condition and TODO: allocate var space & displace variable queries
                 let mut escape_label: String = Default::default();
                 match block.block_type {
+                    BlockType::Else => {
+                        p.else_block_dir = Some(directory);
+                        return Ok(());
+                    }
                     BlockType::If => {
                         escape_label.push_str(program.procs[directory[0].index].label);
                         escape_label.push_str("_IF");
-                        escape_label.push_str(&index.to_string());
+                        escape_label.push_str(&label_discriminant.to_string());
+
+                        label_discriminant += 1;
                         
                         match block.con {
                             Some(ref con) => {
@@ -861,30 +1030,129 @@ fn iterateOverLines(p: EvaluationPackage<'_>, program: &Program<'_>, contents: &
                         contents.push_str("JMPA ");
                         contents.push_str(&escape_label);
                         contents.push_str(";\n");
+
+                        // build package
+                        let mut new_pkg = EvaluationPackage {
+                            lines:&block.lines,
+                            expressions:&block.expressions,
+                            blocks:&block.blocks,
+                            directory:directory,
+                            allocated_bytes:block.allocated_bytes,
+                            t:EvaluationPackageType::Block,
+                            else_block_dir: None
+                        };
+
+                        //eval expressions
+                        match iterateOverLines(& mut new_pkg, program, contents, label_discriminant) {
+                            Ok(_) => (),
+                            Err(e) => return Err(e)
+                        };
+
+                        match new_pkg.else_block_dir {
+                            Some(dir) => {
+                                //only covers true else
+                                let mut universal_escape: String = escape_label.clone();
+                                universal_escape.push_str("_UNI");
+
+                                //place jump to universal (if was true)
+                                contents.push_str("JMPA ");
+                                contents.push_str(&universal_escape);
+                                contents.push_str(";\n");
+
+                                //place escape
+                                contents.push_str("LABEL ");
+                                contents.push_str(&escape_label);
+                                contents.push_str("\n");
+
+                                let else_block = program.getBlock(&dir);
+
+                                //iterate else
+                                let mut else_pkg = EvaluationPackage {
+                                    lines:&else_block.lines,
+                                    expressions:&else_block.expressions,
+                                    blocks:&else_block.blocks,
+                                    directory:dir.to_vec(),
+                                    allocated_bytes:else_block.allocated_bytes,
+                                    t:EvaluationPackageType::Block,
+                                    else_block_dir: None
+                                };
+
+                                //eval expressions
+                                match iterateOverLines(& mut else_pkg, program, contents, label_discriminant) {
+                                    Ok(_) => (),
+                                    Err(e) => return Err(e)
+                                };
+
+                                //place universal
+                                contents.push_str("LABEL ");
+                                contents.push_str(&universal_escape);
+                                contents.push_str("\n");
+                            }
+                            None => {
+                                //place escape
+                                contents.push_str("LABEL ");
+                                contents.push_str(&escape_label);
+                                contents.push_str("\n");
+                            }
+                        };
+                    }
+                    BlockType::While => {
+                        escape_label.push_str(program.procs[directory[0].index].label);
+                        escape_label.push_str("_WHILE");
+                        escape_label.push_str(&label_discriminant.to_string());
+
+                        label_discriminant += 1;
+                        
+
+                        contents.push_str("JMPA ");
+                        contents.push_str(&escape_label);
+                        contents.push_str("_CON");
+                        contents.push_str(";\n");
+
+                        contents.push_str("LABEL ");
+                        contents.push_str(&escape_label);
+                        contents.push_str("_TOP");
+                        contents.push_str("\n");
+
+                        // build package
+                        let mut new_pkg = EvaluationPackage {
+                            lines:&block.lines,
+                            expressions:&block.expressions,
+                            blocks:&block.blocks,
+                            directory:directory,
+                            allocated_bytes:block.allocated_bytes,
+                            t:EvaluationPackageType::Block,
+                            else_block_dir: None
+                        };
+
+                        //eval expressions
+                        match iterateOverLines(&mut new_pkg, program, contents, label_discriminant) {
+                            Ok(_) => (),
+                            Err(e) => return Err(e)
+                        };
+
+                        //place escape
+                        contents.push_str("LABEL ");
+                        contents.push_str(&escape_label);
+                        contents.push_str("_CON");
+                        contents.push_str("\n");
+
+                        match block.con {
+                            Some(ref con) => {
+                                contents.push_str(
+                                    &evaluateExpr(con.clone(), program, &p)?.0
+                                );
+                            }
+                            None => return Err(CompilerError::MissingCondition(block.block_type))
+                        }
+
+                        contents.push_str("JMPA ");
+                        contents.push_str(&escape_label);
+                        contents.push_str("_TOP");
+                        contents.push_str(";\n");
                     }
                     _ => return Err(CompilerError::UnimplementedBlockType(block.block_type))
                 }
-
-                // build package
-                let new_pkg = EvaluationPackage {
-                    lines:&block.lines,
-                    expressions:&block.expressions,
-                    blocks:&block.blocks,
-                    directory:directory,
-                    allocated_bytes:block.allocated_bytes,
-                    t:EvaluationPackageType::Block
-                };
-
-                //eval expressions
-                match iterateOverLines(new_pkg, program, contents) {
-                    Ok(_) => (),
-                    Err(e) => return Err(e)
-                };
-
-                //place escape
-                contents.push_str("LABEL ");
-                contents.push_str(&escape_label);
-                contents.push_str("\n");
             }
             _ => return Err(CompilerError::UnimplementedLineType(p.lines[index].t))
         }
@@ -995,8 +1263,9 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
             contents.push_str(&p.allocated_bytes.to_string());
             contents.push_str(";\n");
         }
+        let mut label_discriminant = 0;
 
-        match iterateOverLines(EvaluationPackage {
+        let mut package = EvaluationPackage {
             lines:&p.lines,
             expressions:&p.expressions,
             blocks:&p.blocks,
@@ -1004,8 +1273,11 @@ pub fn runCompiler<'a>(program: Program<'a>, out_file: &'a str) -> Result<(), Co
                 BlockParent {index: i, t: BlockParentType::Procedure}
             ],
             allocated_bytes:p.allocated_bytes,
-            t:EvaluationPackageType::Procedure
-        }, &program, &mut contents) {
+            t:EvaluationPackageType::Procedure,
+            else_block_dir: None
+        };
+
+        match iterateOverLines(&mut package, &program, &mut contents, label_discriminant) {
             Ok(_) => (),
             Err(e) => return Err(e)
         };

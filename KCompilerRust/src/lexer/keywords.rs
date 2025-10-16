@@ -63,6 +63,8 @@ pub fn charToOp(c: char) -> TokenType {
         '-' => return TokenType::OpSubtract,
         '=' => return TokenType::OpAssign,
         '!' => return TokenType::OpNot,
+        '<' => return TokenType::OpLess,
+        '>' => return TokenType::OpGreat,
         _ => return TokenType::Op,
     }
 }

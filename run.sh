@@ -14,8 +14,8 @@ function runk() {
         fi
         cargo run -- $file
         cd ../
-        g++ -o kasmCompiler kasmCompiler.cpp
-        g++ -o vm_run vm_run.cpp -lSDL2main -lSDL2
+        g++ -o kasmCompiler kasmCompiler.cpp -std=c++17
+        g++ -o vm_run vm_run.cpp -lSDL2main -lSDL2 -std=c++17
         ./kasmCompiler
         ./vm_run
     elif [ $first_flag == "-c" ]; then
@@ -29,8 +29,8 @@ function runk() {
         fi
         cargo run -- $file
         cd ../
-        g++ -o kasmCompiler kasmCompiler.cpp
-        g++ -o vm_run vm_run.cpp -lSDL2main -lSDL2
+        g++ -o kasmCompiler kasmCompiler.cpp -std=c++17
+        g++ -o vm_run vm_run.cpp -lSDL2main -lSDL2 -std=c++17
         ./kasmCompiler
     elif [ $first_flag == "-r" ]; then
         ./vm_run

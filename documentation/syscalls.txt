@@ -22,6 +22,7 @@ READ - 0x03 - Reads the IN buffer to given address and amount (0x$$@@ 0x##)
 CLEAR IN - 0x04 - Clears the IN buffer 
 ACTIVATE POLLING - 0x05 - Activates polling for controls
 DEACTIVATE POLLING - 0x06 - Deactivates polling for controls
+ON WINDOW CLOSE - 0x0D LABEL - Runs the given proc when the window is closed.
 
 
 CLOCK 
@@ -31,5 +32,5 @@ SLEEP - 0x02 - Sleeps for the given amount of miliseconds (expects 4-byte int)
 
 MISC. 
 -------------------------
-SETUP END PROC - 0x09 - When the program is closed the given procedure is ran.
+SETUP END PROC - 0x09 LABEL - When the program is closed the given procedure is ran.
 IS KEY PRESSED - 0x0B ## - When the key ## is pressed A = 1 else A = 0.  

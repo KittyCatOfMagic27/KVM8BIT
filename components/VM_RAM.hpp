@@ -32,6 +32,18 @@ class K_RAM{
         if(rel==IO_CONSOLE_BUFFERED_OUT_ADDRESS){OUT_BUFFER.push_back((char)data); return;}
         if(rel>=SIZE){printf("Address '0x%04x' out of range.\n", rel); exit(-1);}
         *ptr = data;
+        #ifdef __XRAY_STACK__
+        if(rel>=0x0100&&rel<=0x01FF){
+            printf("\033[2J\033[H");
+            printOp(CURRENT_INSTRUCTION);
+            std::cout << std::endl;
+            printStack();
+            std::string BUFFER = "";
+            std::cout << "Any to Continue, q to quit." << std::endl;
+            std::cin >> BUFFER;
+            if(BUFFER == "q") exit(0);
+        }
+        #endif
     }
 
     void assignToAddress(uint8_t page, uint8_t addr, uint8_t data){

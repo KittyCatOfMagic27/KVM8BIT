@@ -27,7 +27,7 @@ void programLoop(){
             case SDL_WINDOWEVENT:
                 switch (event.window.event) {
                     case SDL_WINDOWEVENT_CLOSE:   // exit game
-                        CPU.end();
+                        CPU.windowClosed();
                         return;
                         break;
                     default:

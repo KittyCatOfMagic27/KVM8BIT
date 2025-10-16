@@ -69,7 +69,8 @@ pub enum ExpressionType{
     Unspecified,
     Return,
     Assignment,
-    Conditional
+    ConditionalIf,
+    ConditionalWhile
 }
 
 #[derive(Default, Debug)]

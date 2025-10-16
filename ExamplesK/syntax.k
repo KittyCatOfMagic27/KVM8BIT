@@ -22,7 +22,7 @@ proc:uint main()
     _X = 0;
     uint x = 0;
     while(_X < 11)
-        if(_X = 10)
+        if(_X == 10)
             store('1', outAddr);
             store('0', outAddr);
         else

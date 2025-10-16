@@ -1,0 +1,10 @@
+V10.16.25
+---------------------
+- Added if, while, else
+- ==, <, >, >=, <= in conditional statements
+- added further - support
+- new syscalls
+- Fixed stack indexing
+- Various bug fixes
+- Minimal support added for Mac (enforce c++17 and OS differentiation for SDL)
+- Added Error further error checking (fixing weird errors I run into and knowing when I mess up again through MANY errors)

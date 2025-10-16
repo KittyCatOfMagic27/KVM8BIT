@@ -10,13 +10,13 @@
 #define IO_CONSOLE_BUFFERED_OUT_ADDRESS 0xFFFE
 
 // #define __DEBUG__
+// #define __DEBUG_GRAPHICS__
 // #define __XRAY_STACK__
 // #define __PRINT_FPS__
 
 #include "./tables/OPcodes.hpp"
 
-#include "./components/VM_RAM.hpp"
-#include "./components/VM_PPU.hpp"
+static char CURRENT_INSTRUCTION = 0;
 
 void printOp(uint8_t op){
     for (auto& p: OPCodetable) {
@@ -27,6 +27,9 @@ void printOp(uint8_t op){
         }
     }
 }
+
+#include "./components/VM_RAM.hpp"
+#include "./components/VM_PPU.hpp"
 
 class K_CPU{
     public:
@@ -58,6 +61,7 @@ class K_CPU{
     K_PPU PPU;
     //MISC.
     uint16_t endingProc = 0xFFFF;
+    uint16_t windowProc = 0xFFFF;
 
     K_CPU(){}
     K_CPU(size_t _ramSize, uint8_t* _ROM):ramSize(_ramSize), ROM(_ROM){
@@ -89,6 +93,20 @@ class K_CPU{
         PPU.window.end();
     }
 
+    void windowClosed(){
+        PC = windowProc;
+        while(windowProc!=0xFFFF){
+            ReturnPackage ret = executeProgramTick(nullptr);
+            if(ret.programEnd)break;
+        }
+        PC = endingProc;
+        while(endingProc!=0xFFFF){
+            ReturnPackage ret = executeProgramTick(nullptr);
+            if(ret.programEnd)break;
+        }
+        PPU.window.end();
+    }
+
     ReturnPackage executeProgramTick(std::vector<SDL_Event> *events){
         #define GET_CHAR (*(ROM+PC))
         #define GET_NEXT_CHARI (*(ROM+(++PC)))
@@ -97,14 +115,7 @@ class K_CPU{
         std::string instructionHistory = "";
         while(true){
             #ifdef __XRAY_STACK__
-            printf("\033[2J\033[H");
-            printOp(GET_CHAR);
-            std::cout << std::endl;
-            RAM.printStack();
-            std::string BUFFER = "";
-            std::cout << "Any to Continue, q to quit." << std::endl;
-            std::cin >> BUFFER;
-            if(BUFFER == "q") return{true, 0};
+            CURRENT_INSTRUCTION = GET_CHAR;
             #endif
             instructionHistory+=(char)GET_CHAR;
             switch(GET_CHAR){
@@ -133,27 +144,43 @@ class K_CPU{
                         break;
                         //GRAPHICS FUNCTION
                         case 0x08:{
-                            // for(int i = 0; i < RAM.OUT_BUFFER.size(); i++){
-                            //     std::cout << (int)RAM.OUT_BUFFER[i] << " ";
-                            // }
+                            #ifdef __DEBUG_GRAPHICS__
+                            std::cout << "INPUTS TO GRAPHICS CALL: ";
+                            for(int i = 0; i < RAM.OUT_BUFFER.size(); i++){
+                                std::cout << (int)(uint8_t)RAM.OUT_BUFFER[i] << " ";
+                            }
+                            std::cout << std::endl;
+                            #endif 
                             switch(RAM.OUT_BUFFER[0]){
                                 //CHANGE BACKGROUND COLOR
                                 case 0x01:{
+                                    #ifdef __DEBUG_GRAPHICS__
+                                    std::cout << "CHANGING BACKGROUND COLOR" << std::endl;
+                                    #endif 
                                     PPU.window.colorBackground(RAM.OUT_BUFFER[1],RAM.OUT_BUFFER[2],RAM.OUT_BUFFER[3]);
                                 }
                                 break;
                                 //DRAW TILE RGB
                                 case 0x02:{
+                                    #ifdef __DEBUG_GRAPHICS__
+                                    std::cout << "DRAWING RGB TILE" << std::endl;
+                                    #endif 
                                     PPU.drawRectTile((uint8_t)(RAM.OUT_BUFFER[1]), (uint8_t)(RAM.OUT_BUFFER[2]), {(uint8_t)RAM.OUT_BUFFER[3], (uint8_t)RAM.OUT_BUFFER[4], (uint8_t)RAM.OUT_BUFFER[5]});
                                 }
                                 break;
                                 //DRAW PIXEL RBG
                                 case 0x03:{
+                                    #ifdef __DEBUG_GRAPHICS__
+                                    std::cout << "DRAWING RGB PIXEL" << std::endl;
+                                    #endif 
                                     PPU.drawPixel((uint8_t)(RAM.OUT_BUFFER[1]), (uint8_t)(RAM.OUT_BUFFER[2]), {(uint8_t)RAM.OUT_BUFFER[3], (uint8_t)RAM.OUT_BUFFER[4], (uint8_t)RAM.OUT_BUFFER[5]});
                                 }
                                 break;
                                 //LOAD TEXTURE
                                 case 0x04:{
+                                    #ifdef __DEBUG_GRAPHICS__
+                                    std::cout << "LOADING TEXTURE" << std::endl;
+                                    #endif 
                                     uint16_t address = (uint8_t)RAM.OUT_BUFFER[1];
                                     address <<= 8;
                                     address += (uint8_t)RAM.OUT_BUFFER[2];
@@ -178,11 +205,17 @@ class K_CPU{
                                 break;
                                 //DRAW TEXTURE
                                 case 0x05:{
+                                    #ifdef __DEBUG_GRAPHICS__
+                                    std::cout << "DRAWING TEXTURE" << std::endl;
+                                    #endif 
                                     PPU.drawTexture(RAM.OUT_BUFFER[1], RAM.OUT_BUFFER[2], RAM.OUT_BUFFER[3], RAM.OUT_BUFFER[4]);
                                 }
                                 break;
                                 //LOAD PALLET
                                 case 0x06:{
+                                    #ifdef __DEBUG_GRAPHICS__
+                                    std::cout << "LOADING PALLETE" << std::endl;
+                                    #endif 
                                     uint16_t address = (uint8_t)RAM.OUT_BUFFER[1];
                                     address <<= 8;
                                     address += (uint8_t)RAM.OUT_BUFFER[2];
@@ -209,6 +242,15 @@ class K_CPU{
                             address <<= 8;
                             address += (uint8_t)RAM.OUT_BUFFER[1];
                             endingProc = address;
+                            RAM.OUT_BUFFER = "";
+                        }
+                        break;
+                        //DECLARE WINDOW PROC
+                        case 0x0D:{
+                            uint16_t address = (uint8_t)RAM.OUT_BUFFER[0];
+                            address <<= 8;
+                            address += (uint8_t)RAM.OUT_BUFFER[1];
+                            windowProc = address;
                             RAM.OUT_BUFFER = "";
                         }
                         break;
@@ -283,7 +325,7 @@ class K_CPU{
                 case 0xC2:
                 {
                     uint8_t pageDest = 0x01;
-                    uint8_t addrDest = S-GET_NEXT_CHARI;
+                    uint8_t addrDest = S+GET_NEXT_CHARI;
                     uint8_t byte1 = GET_NEXT_CHARI;
                     uint8_t byte2 = GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(pageDest, addrDest);
@@ -322,7 +364,7 @@ class K_CPU{
                 case 0xFC: 
                 {   
                     uint8_t page = 0x01;
-                    uint8_t addr = S-GET_NEXT_CHARI;
+                    uint8_t addr = S+GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(page, addr);
                     #ifdef __DEBUG__
                     std::cout << "Stored Y to stack position:" << (int)addr << std::endl;
@@ -356,8 +398,7 @@ class K_CPU{
                 case 0x1C: 
                 {   
                     uint8_t page = 0x01;
-                    uint8_t addr = S-GET_NEXT_CHARI;
-                    std::cout << "writing to "<< int(addr) << std::endl;
+                    uint8_t addr = S+GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(page, addr);
                     #ifdef __DEBUG__
                     std::cout << "Stored A to stack position:" << (int)addr << std::endl;
@@ -391,7 +432,7 @@ class K_CPU{
                 case 0x3C: 
                 {   
                     uint8_t page = 0x01;
-                    uint8_t addr = S-GET_NEXT_CHARI;
+                    uint8_t addr = S+GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(page, addr);
                     #ifdef __DEBUG__
                     std::cout << "Stored X to stack position:" << (int)addr << std::endl;
@@ -435,7 +476,7 @@ class K_CPU{
                 case 0x5C:
                 {
                     uint8_t page = 0x01;
-                    uint8_t addr = S-GET_NEXT_CHARI;
+                    uint8_t addr = S+GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(page, addr);
                     #ifdef __DEBUG__
                     std::cout << "Loaded to Y: byte at stack index:" << (int)addr << std::endl;
@@ -477,7 +518,7 @@ class K_CPU{
                 case 0x7C:
                 {
                     uint8_t page = 0x01;
-                    uint8_t addr = S-GET_NEXT_CHARI;
+                    uint8_t addr = S+GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(page, addr);
                     #ifdef __DEBUG__
                     std::cout << "Loaded to A: byte at stack index:" << (int)addr << std::endl;
@@ -519,7 +560,7 @@ class K_CPU{
                 case 0xDC:
                 {
                     uint8_t page = 0x01;
-                    uint8_t addr = S-GET_NEXT_CHARI;
+                    uint8_t addr = S+GET_NEXT_CHARI;
                     uint8_t* ptr = RAM.getRAddress(page, addr);
                     #ifdef __DEBUG__
                     std::cout << "Loaded to X: byte at stack index:" << (int)addr << std::endl;
@@ -548,6 +589,20 @@ class K_CPU{
                     else{P &= 0b10111110;}
                     A = x;
                 } break;
+                //ADC $$$$
+                case 0x6D: {
+                    uint8_t page = GET_NEXT_CHARI;
+                    uint8_t addr = GET_NEXT_CHARI;
+                    uint8_t* ptr = RAM.getRAddress(page, addr);
+                    int x = A + *ptr;
+                    #ifdef __DEBUG__
+                    std::cout << "Added A and " << page << ":" << addr << " = " << x << std::endl;
+                    #endif
+                    if(x < 0){P &= 0b10111110; P += 0b00000001; x=0;}
+                    else if(x==0){P &= 0b10111110; P += 0b01000000;}
+                    else{P &= 0b10111110;}
+                    A = x;
+                }
                 //SBCC (ADD CARRY AND FLAGS)
                 case 0xE9:{ 
                     int x = A - GET_NEXT_CHARI;
@@ -623,11 +678,13 @@ class K_CPU{
 
                 //------------BRANCH------------
                 //BEQ
-                case 0xF0:{int bytes = GET_NEXT_CHARI; if((P&0b01000000)!=0)PC+=bytes;} break;
+                case 0xF0:{int bytes = GET_NEXT_CHARI; if((P&0b01000000)!=0)PC+=bytes;} break; //equal
                 //BNE 
-                case 0xD0:{int bytes = GET_NEXT_CHARI; if((P&0b01000000)==0)PC+=bytes;} break;
+                case 0xD0:{int bytes = GET_NEXT_CHARI; if((P&0b01000000)==0)PC+=bytes;} break; //not equal
                 //BMI
-                case 0x30:{int bytes = GET_NEXT_CHARI; if((P&0b00000001)==1)PC+=bytes;} break;
+                case 0x30:{int bytes = GET_NEXT_CHARI; if((P&0b00000001)==1)PC+=bytes;} break; //less than
+                //BPL
+                case 0x10:{int bytes = GET_NEXT_CHARI; if((P&0b00000001)!=1)PC+=bytes;} break; //greater
 
                 //------------BREAK------------
                 case 0x04:{std::cout << "Program returned with: " << (int)A << std::endl; return {true, A};}break;

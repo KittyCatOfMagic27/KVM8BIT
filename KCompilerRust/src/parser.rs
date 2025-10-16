@@ -35,6 +35,9 @@ pub enum ParserError {
     #[error("(ParserError) Missing end statement.")]
     MissingEndStatement,
 
+    #[error("(ParserError) Missing ret statement in proc '{0}'.")]
+    MissingReturn(String),
+
     #[error("(ParserError) Missing terminating square bracket.")]
     MissingClosingSqBracket,
 
@@ -59,6 +62,9 @@ pub enum ParserError {
     #[error("(ParserError) Attempted to put the variable '{0}' outside of a procedure.")]
     AttemptedVariableInProgram(String),
 
+    #[error("(ParserError) Invalid assignment to '{0}'.")]
+    InvalidAssignment(String),
+
     #[error("(ParserError) Label '{0}' could not be identified.")]
     UnidentifiedLabel(String),
 
@@ -73,6 +79,9 @@ pub enum ParserError {
 
     #[error("(ParserError) Operator '{0}' not within expression or missing oprehands.")]
     StrayOperator(String),
+
+    #[error("(ParserError) Else not attacthed to if or elif block.")]
+    HangingElse,
 
     #[error("(ParserError) Variable '{0}' is redefined.")]
     RedefinitionOfVariable(String),
@@ -100,6 +109,9 @@ pub enum ParserError {
 pub enum ParserWarning {
     #[error("(ParserWarning) Unidentified warning.")]
     WarningUnidentified,
+
+    #[error("(ParserWarning) Possible stray value of '{0}'.")]
+    WarningPossibleStrayValue(String),
 
     #[error("(ParserWarning) Variable '{0}' is defined without initial value being assigned.")]
     WarningNoInitialValue(String),
@@ -135,6 +147,66 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                 }
                 for v in &$program.static_variables{
                     if v.label == $label {variable = Some(v); break;}
+                }
+            }
+            variable
+        })
+    }
+
+    #[macro_export]
+    macro_rules! grabVariable_mut {
+        ($label: expr, $program: expr, $current_proc: expr) => ({
+            let mut variable = match $current_proc{
+                Some(p) => {
+                    let proc = & mut $program.procs[p];
+                    let mut fv = Default::default();
+                    let mut len = $program.procs[p].arguments.len();
+                    for i in 0..len{
+                        let v = proc.arguments[i];
+                        if v.label == $label {
+                            fv = Some(v); 
+                            break;
+                        }
+                    }
+                    if fv == Default::default() {
+                        len = $program.procs[p].variables.len();
+                        for i in 0..len{
+                            let v = proc.variables[i];
+                            if v.label == $label {
+                                fv = Some(v); 
+                                break;
+                            }
+                        }
+                    }
+                    fv
+                }
+                None => None
+            };
+
+            if variable.is_none() {
+                let mut len = $program.heap_variables.len();
+                for i in 0..len{
+                    let v = & mut $program.heap_variables[i];
+                    if v.label == $label {
+                        variable = Some(v); 
+                        break;
+                    }
+                }
+                len = $program.const_variables.len();
+                for i in 0..len{
+                    let v = & mut $program.const_variables[i];
+                    if v.label == $label {
+                        variable = Some(v); 
+                        break;
+                    }
+                }
+                len = $program.static_variables.len();
+                for i in 0..len{
+                    let v = & mut $program.static_variables[i];
+                    if v.label == $label {
+                        variable = Some(v); 
+                        break;
+                    }
                 }
             }
             variable
@@ -252,7 +324,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                                     } else {
                                         program.procs[p].allocated_bytes += var_size as u8;
                                     }
-                                    DataAllocationType::Stack(s)
+                                    DataAllocationType::Stack(s+1)
                                 }
                                 DataAllocationType::Const => DataAllocationType::Const,
                                 _ => return Err(ParserError::UnimplementedDataAllocType($dat))
@@ -355,6 +427,7 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
     let mut current_var_def: Option<(usize, VarDest)> = None;
     let mut creatingBlock: BlockType = BlockType::None;
     let mut current_block: Option<Vec<BlockParent>> = None;
+    let mut hasRet: bool = false;
 
     while tk_iter.len() != 0{
         tk=tk_iter.nth(0).unwrap();
@@ -407,19 +480,33 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                 current_proc = Some(program.procs.len()-1);
             }
             TokenType::KeywordEnd => {
-                // TODO: Add support for blocks
-                let _proc = match current_proc {
+                let proc = match current_proc {
                     Some(p) => p,
                     None => return Err(ParserError::ExcessiveEndStatement)
                 };
                 match current_block {
                     Some(ref mut directory) => {
-                        directory.pop();
+                        match directory.last(){
+                            Some(ref bp) => {
+                                if bp.t == BlockParentType::Block 
+                                    && program.getBlock(directory).block_type == BlockType::Else {
+                                    while program.getBlock(directory).block_type != BlockType::If {directory.pop();}
+                                    directory.pop();
+                                } 
+                                else {directory.pop();}
+                            }
+                            None => ()
+                        }
+
                         if directory.len() == 1{
                             current_block = None;
                         }
                     }
-                    None => current_proc = None
+                    None => {
+                        if !hasRet {return Err(ParserError::MissingReturn(program.procs[proc].label.to_string()));}
+                        hasRet = false;
+                        current_proc = None
+                    }
                 }
             }
             TokenType::KeywordRet => {
@@ -427,6 +514,8 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                 if expr.is_some() {return Err(ParserError::SymbolIncorrectlyInExpression);}
                 let mut built_expr: Expression = Default::default();
                 built_expr.t = ExpressionType::Return;
+
+                hasRet = true;
                 
                 expr = Some(built_expr);
             }
@@ -458,9 +547,9 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                                 ExpressionType::Assignment =>{
                                     match exp.tks[0].tk_type{
                                         TokenType::Variable => {
-                                            let unpkged_var = match current_var_def {
+                                            match current_var_def {
                                                 Some(i) => {
-                                                    match i.1 {
+                                                    let unpkged_var: &mut parserTree::Variable<'_> = match i.1 {
                                                         VarDest::CurrentProc => {
                                                             & mut program.procs[{match current_proc {
                                                                 Some(p) => p,
@@ -470,17 +559,23 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                                                         VarDest::Heap => & mut program.heap_variables[i.0],
                                                         VarDest::ProgramConst => & mut program.const_variables[i.0],
                                                         _ => return Err(ParserError::AttemptedVariableInProgram(exp.tks[0].tk_data.to_string()))
+                                                    };
+                                                    // only supoorts `const TYPE = VALUE;` 
+                                                    if unpkged_var.t.a == DataAllocationType::Const {
+                                                        unpkged_var.value = Some(exp.tks[2]);
+                                                        // ignores other resolvables, add a macro called "resolve!(e)"
+                                                        resolvableErrors.pop();
+                                                        pushExpr = false;
                                                     }
+                                                    current_var_def = None;
                                                 },
-                                                None => return Err(ParserError::UnidentifiedError)
+                                                None => {
+                                                    match grabVariable!(exp.tks[0].tk_data, program, current_proc){
+                                                        Some(_) => (),
+                                                        None => return Err(ParserError::InvalidAssignment(exp.tks[0].tk_data.to_string()))
+                                                    };
+                                                }
                                             };
-                                            // only supoorts `const TYPE = VALUE;` 
-                                            if unpkged_var.t.a == DataAllocationType::Const {
-                                                unpkged_var.value = Some(exp.tks[2]);
-                                                // ignores other resolvables, add a macro called "resolve!(e)"
-                                                resolvableErrors.pop();
-                                                pushExpr = false;
-                                            }
                                         }
                                         _ => ()
                                     }
@@ -552,6 +647,46 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                 if tk.tk_data != "(" {return Err(ParserError::NoParaConBlockDef);}
                 creatingBlock = BlockType::If;
             }
+            TokenType::KeywordElse => {
+                match current_proc { 
+                    Some(p) => {
+                        let mut new_block: Block<'a> = Default::default();
+                        new_block.block_type = BlockType::Else;
+
+                        //load up parentDirectory, if of block copy partent and add parent index
+                        match current_block {
+                            Some(ref dir) =>{ 
+                                new_block.parentDirectory = dir.clone();
+                                let mut cblock = program.getBlock_mut(dir);
+                                new_block.distance = cblock.distance + 1;
+
+                                if cblock.block_type != BlockType::If {return Err(ParserError::HangingElse);}
+
+                                //push block to parent
+                                let len = cblock.blocks.len();
+
+                                //set cblock and reset expr
+                                let mut cdir = new_block.parentDirectory.clone();
+                                cdir.push(BlockParent{
+                                    t: BlockParentType::Block, 
+                                    index:len
+                                });
+                                current_block = Some(cdir);
+
+                                //push block to parent
+                                cblock.lines.push(Line {index: len, t: LineType::Block});
+                                cblock.blocks.push(new_block);
+                            }
+                            None => { 
+                                return Err(ParserError::HangingElse);
+                            }
+                        }
+                    }
+                    None => { 
+                        return Err(ParserError::HangingElse);
+                    }
+                }
+            }
             TokenType::KeywordWhile => {
                 tk=tk_iter.next().unwrap(); //next token
                 if tk.tk_data != "(" {return Err(ParserError::NoParaConBlockDef);}
@@ -569,36 +704,61 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                                             Some(ref mut exp) => exp,
                                             None => return Err(ParserError::UnnecessarySemicolon)
                                         };
-                                        unpkg_expr.t = ExpressionType::Conditional;
+                                        unpkg_expr.t = match creatingBlock {
+                                            BlockType::If => ExpressionType::ConditionalIf,
+                                            BlockType::While => ExpressionType::ConditionalWhile,
+                                            _ => return Err(ParserError::UnidentifiedError)
+                                        };
 
                                         let mut new_block: Block<'a> = Default::default();
                                         new_block.con = Some(unpkg_expr.clone());
-
-                                        //load up parentDirectory, if of block copy partent and add parent index
-                                        new_block.parentDirectory.push(BlockParent{
-                                            index: p,
-                                            t: BlockParentType::Procedure
-                                        });
-
                                         new_block.block_type = creatingBlock;
 
-                                        //TODO: evaluate distance
-                                        new_block.distance = 1;
+                                        //load up parentDirectory, if of block copy partent and add parent index
+                                        match current_block {
+                                            Some(ref dir) =>{ 
+                                                new_block.parentDirectory = dir.clone();
+                                                let mut cblock = program.getBlock_mut(dir);
+                                                new_block.distance = cblock.distance + 1;
 
-                                        //push block to parent
-                                        let len = program.procs[p].blocks.len();
+                                                //push block to parent
+                                                let len = cblock.blocks.len();
 
-                                        //set cblock
-                                        let mut cblock = new_block.parentDirectory.clone();
-                                        cblock.push(BlockParent{
-                                            t: BlockParentType::Block, 
-                                            index:len
-                                        });
-                                        current_block = Some(cblock);
+                                                //set cblock and reset expr
+                                                let mut cdir = new_block.parentDirectory.clone();
+                                                cdir.push(BlockParent{
+                                                    t: BlockParentType::Block, 
+                                                    index:len
+                                                });
+                                                current_block = Some(cdir);
 
-                                        //push block to parent
-                                        program.procs[p].lines.push(Line {index: len, t: LineType::Block});
-                                        program.procs[p].blocks.push(new_block);
+                                                //push block to parent
+                                                cblock.lines.push(Line {index: len, t: LineType::Block});
+                                                cblock.blocks.push(new_block);
+                                            }
+                                            None => { 
+                                                new_block.parentDirectory.push(BlockParent{
+                                                    index: p,
+                                                    t: BlockParentType::Procedure
+                                                });
+                                                new_block.distance = 1;
+
+                                                //push block to parent
+                                                let len = program.procs[p].blocks.len();
+
+                                                //set cblock and reset expr
+                                                let mut cblock = new_block.parentDirectory.clone();
+                                                cblock.push(BlockParent{
+                                                    t: BlockParentType::Block, 
+                                                    index:len
+                                                });
+                                                current_block = Some(cblock);
+
+                                                //push block to parent
+                                                program.procs[p].lines.push(Line {index: len, t: LineType::Block});
+                                                program.procs[p].blocks.push(new_block);
+                                            }
+                                        }
                                         expr = None;
                                     }
                                     None => return Err(ParserError::AttemptedBlockInProgram(BlockType::If))
@@ -656,7 +816,9 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
                     None => return Err(ParserError::StrayAssignment)
                 };
             }
-            TokenType::OpEq |
+            TokenType::OpEq | TokenType::OpNEq | 
+            TokenType::OpLessEq | TokenType::OpGreatEq | 
+            TokenType::OpLess | TokenType::OpGreat |
             TokenType::OpAdd |
             TokenType::OpSubtract => {
                 match expr {
@@ -670,7 +832,14 @@ pub fn runParser<'a>(token_storage: &'a mut [Token<'a>], mut program: Program<'a
             TokenType::HexNumberLiteral => {
                 match expr {
                     Some(ref mut exp) => exp.tks.push(tk),
-                    None => return Err(ParserError::StrayValue(tk.tk_data.to_string()))
+                    None =>{ 
+                        let mut built_expr: Expression = Default::default();
+                        built_expr.t = ExpressionType::Unspecified;
+                        built_expr.tks.push(tk);
+                        
+                        expr = Some(built_expr);
+                        warnings.push(ParserWarning::WarningPossibleStrayValue(tk.tk_data.to_string()))
+                    }
                 };
             }
             TokenType::EmbeddedFunction |
